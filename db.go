@@ -17,6 +17,9 @@ type DB struct {
 }
 
 func DefaultDBPath() string {
+	if p := os.Getenv("SAI_DB_PATH"); p != "" {
+		return p
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "sai", "sai.db")
 }

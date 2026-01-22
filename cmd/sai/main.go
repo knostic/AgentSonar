@@ -168,12 +168,34 @@ func init() {
 }
 
 var ignoreCmd = &cobra.Command{
-	Use:   "ignore <domain>",
-	Short: "Add domain to non-AI filter",
+	Use:   "ignore",
+	Short: "Manage ignored domains",
+	Run: func(cmd *cobra.Command, args []string) {
+		listIgnored()
+	},
+}
+
+var ignoreAddCmd = &cobra.Command{
+	Use:   "add <domain>",
+	Short: "Add domain to ignore list",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		addIgnore(args[0])
 	},
+}
+
+var ignoreRmCmd = &cobra.Command{
+	Use:   "rm <domain>",
+	Short: "Remove domain from ignore list",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		removeIgnore(args[0])
+	},
+}
+
+func init() {
+	ignoreCmd.AddCommand(ignoreAddCmd)
+	ignoreCmd.AddCommand(ignoreRmCmd)
 }
 
 var triageCmd = &cobra.Command{
@@ -379,6 +401,9 @@ func runEvents(cmd *cobra.Command) {
 	if jsonOutput {
 		enc := json.NewEncoder(os.Stdout)
 		for _, e := range events {
+			if filterSet.IsNonAIDomain(e.Domain) {
+				continue
+			}
 			e.Agent = filterSet.MatchAgent(e.Process, e.Domain)
 			e.Confidence = acc.Confidence(e.Process, e.Domain)
 			if e.Agent != "" {
@@ -388,6 +413,9 @@ func runEvents(cmd *cobra.Command) {
 		}
 	} else {
 		for _, e := range events {
+			if filterSet.IsNonAIDomain(e.Domain) {
+				continue
+			}
 			agent := filterSet.MatchAgent(e.Process, e.Domain)
 			conf := acc.Confidence(e.Process, e.Domain)
 			if agent != "" {
@@ -444,11 +472,30 @@ func removeAgent(name string) {
 	fmt.Printf("removed agent: %s\n", name)
 }
 
+func listIgnored() {
+	filterSet := loadFilterSet()
+	domains := filterSet.ListIgnoredDomains()
+	if len(domains) == 0 {
+		fmt.Println("no ignored domains")
+		return
+	}
+	for _, d := range domains {
+		fmt.Println(d)
+	}
+}
+
 func addIgnore(domain string) {
 	filterSet := loadFilterSet()
 	filterSet.AddNonAIDomain(domain)
 	saveFilterSet(filterSet)
-	fmt.Printf("added to non-AI filter: %s\n", domain)
+	fmt.Printf("added to ignore list: %s\n", domain)
+}
+
+func removeIgnore(domain string) {
+	filterSet := loadFilterSet()
+	filterSet.RemoveIgnoredDomain(domain)
+	saveFilterSet(filterSet)
+	fmt.Printf("removed from ignore list: %s\n", domain)
 }
 
 func runTriage() {
@@ -693,10 +740,16 @@ func runDoctor() {
 }
 
 func pidPath() string {
+	if dir := os.Getenv("SAI_CONFIG_DIR"); dir != "" {
+		return filepath.Join(dir, "sai.pid")
+	}
 	return filepath.Join(filepath.Dir(sai.DefaultDBPath()), "sai.pid")
 }
 
 func logPath() string {
+	if dir := os.Getenv("SAI_CONFIG_DIR"); dir != "" {
+		return filepath.Join(dir, "sai.log")
+	}
 	return filepath.Join(filepath.Dir(sai.DefaultDBPath()), "sai.log")
 }
 

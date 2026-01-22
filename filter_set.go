@@ -19,9 +19,10 @@ type FilterAgent struct {
 }
 
 type FilterSet struct {
-	agents      []FilterAgent
-	nonAIFilter *bloomFilter
-	mu          sync.RWMutex
+	agents         []FilterAgent
+	ignoredDomains []string
+	nonAIFilter    *bloomFilter
+	mu             sync.RWMutex
 }
 
 func NewFilterSet() *FilterSet {
@@ -123,9 +124,36 @@ func (f *FilterSet) AddNonAI(process, domain string) {
 }
 
 func (f *FilterSet) AddNonAIDomain(domain string) {
+	domain = normalizeDomain(domain)
 	f.mu.Lock()
-	f.nonAIFilter.Add(normalizeDomain(domain))
-	f.mu.Unlock()
+	defer f.mu.Unlock()
+	for _, d := range f.ignoredDomains {
+		if d == domain {
+			return
+		}
+	}
+	f.ignoredDomains = append(f.ignoredDomains, domain)
+	f.nonAIFilter.Add(domain)
+}
+
+func (f *FilterSet) RemoveIgnoredDomain(domain string) {
+	domain = normalizeDomain(domain)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, d := range f.ignoredDomains {
+		if d == domain {
+			f.ignoredDomains = append(f.ignoredDomains[:i], f.ignoredDomains[i+1:]...)
+			return
+		}
+	}
+}
+
+func (f *FilterSet) ListIgnoredDomains() []string {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	result := make([]string, len(f.ignoredDomains))
+	copy(result, f.ignoredDomains)
+	return result
 }
 
 func (f *FilterSet) IsNonAI(process, domain string) bool {
@@ -139,6 +167,12 @@ func (f *FilterSet) IsNonAIDomain(domain string) bool {
 	domain = normalizeDomain(domain)
 	f.mu.RLock()
 	defer f.mu.RUnlock()
+
+	for _, d := range f.ignoredDomains {
+		if d == domain || strings.HasSuffix(domain, "."+d) {
+			return true
+		}
+	}
 
 	if f.nonAIFilter.Test(domain) {
 		return true
@@ -182,6 +216,18 @@ func (f *FilterSet) Save(path string) error {
 		return err
 	}
 
+	ignoredJSON, err := json.Marshal(f.ignoredDomains)
+	if err != nil {
+		return err
+	}
+	binary.LittleEndian.PutUint32(lenBuf, uint32(len(ignoredJSON)))
+	if _, err := file.Write(lenBuf); err != nil {
+		return err
+	}
+	if _, err := file.Write(ignoredJSON); err != nil {
+		return err
+	}
+
 	return f.nonAIFilter.writeTo(file)
 }
 
@@ -209,11 +255,38 @@ func (f *FilterSet) Load(path string) error {
 		return err
 	}
 
-	nonAIFilter, err := readBloomFilter(file)
-	if err != nil {
+	if _, err := io.ReadFull(file, lenBuf); err != nil {
 		return err
 	}
-	f.nonAIFilter = nonAIFilter
+	nextVal := binary.LittleEndian.Uint32(lenBuf)
+
+	// backwards compat: old format has bloom filter m value here (typically ~95000)
+	// new format has ignored domains JSON length (typically small)
+	if nextVal < 50000 {
+		ignoredJSON := make([]byte, nextVal)
+		if _, err := io.ReadFull(file, ignoredJSON); err != nil {
+			return err
+		}
+		if err := json.Unmarshal(ignoredJSON, &f.ignoredDomains); err != nil {
+			return err
+		}
+		nonAIFilter, err := readBloomFilter(file)
+		if err != nil {
+			return err
+		}
+		f.nonAIFilter = nonAIFilter
+	} else {
+		if _, err := io.ReadFull(file, lenBuf); err != nil {
+			return err
+		}
+		k := int(binary.LittleEndian.Uint32(lenBuf))
+		m := int(nextVal)
+		bitset := make([]byte, (m+7)/8)
+		if _, err := io.ReadFull(file, bitset); err != nil {
+			return err
+		}
+		f.nonAIFilter = &bloomFilter{m: m, k: k, bitset: bitset}
+	}
 
 	return nil
 }
@@ -263,6 +336,9 @@ func readBloomFilter(r io.Reader) (*bloomFilter, error) {
 }
 
 func DefaultFilterPath() string {
+	if p := os.Getenv("SAI_FILTER_PATH"); p != "" {
+		return p
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "sai", "filters.bin")
 }
