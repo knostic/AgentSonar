@@ -1,6 +1,6 @@
 //go:build darwin
 
-package sai
+package capture
 
 import (
 	"strings"

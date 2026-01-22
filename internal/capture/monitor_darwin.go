@@ -1,6 +1,6 @@
 //go:build darwin
 
-package sai
+package capture
 
 /*
 #include <libproc.h>
@@ -21,32 +21,33 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
+	"github.com/knostic/sai/types"
 )
 
 type sniMonitor struct {
-	cfg          Config
+	cfg          types.Config
 	handle       *pcap.Handle
-	events       chan Event
+	events       chan types.Event
 	seen         map[string]time.Time
-	sniToConn    map[string]ConnectionKey
+	sniToConn    map[string]types.ConnectionKey
 	ipToHost     map[string]string
 	dnsQueryTime map[string]time.Time
-	connPID      map[ConnectionKey]int
+	connPID      map[types.ConnectionKey]int
 	portCache    map[uint16]uint32
 	traffic      *trafficAnalyzer
 	mu           sync.Mutex
 	done         chan struct{}
 }
 
-func newSNIMonitor(cfg Config) *sniMonitor {
+func NewSNIMonitor(cfg types.Config) *sniMonitor {
 	return &sniMonitor{
 		cfg:          cfg,
-		events:       make(chan Event, 100),
+		events:       make(chan types.Event, 100),
 		seen:         make(map[string]time.Time),
-		sniToConn:    make(map[string]ConnectionKey),
+		sniToConn:    make(map[string]types.ConnectionKey),
 		ipToHost:     make(map[string]string),
 		dnsQueryTime: make(map[string]time.Time),
-		connPID:      make(map[ConnectionKey]int),
+		connPID:      make(map[types.ConnectionKey]int),
 		portCache:    make(map[uint16]uint32),
 		traffic:      newTrafficAnalyzer(),
 		done:         make(chan struct{}),
@@ -171,7 +172,7 @@ func (s *sniMonitor) updateStatsFromNetstat() {
 			continue
 		}
 
-		key := ConnectionKey{
+		key := types.ConnectionKey{
 			SrcIP:   localIP,
 			DstIP:   foreignIP,
 			SrcPort: localPort,
@@ -214,7 +215,7 @@ func (s *sniMonitor) processPacket(packet gopacket.Packet) {
 
 		if len(tcp.Payload) > 0 && dstPort == 443 {
 			if ch := ParseClientHello(tcp.Payload); ch != nil && ch.SNI != "" {
-				connKey := ConnectionKey{SrcIP: srcIP, DstIP: dstIP, SrcPort: srcPort, DstPort: dstPort}
+				connKey := types.ConnectionKey{SrcIP: srcIP, DstIP: dstIP, SrcPort: srcPort, DstPort: dstPort}
 				s.traffic.TrackConnection(connKey)
 				s.emitTLSEvent(ch, srcPort, connKey)
 			}
@@ -248,7 +249,7 @@ func (s *sniMonitor) processPacket(packet gopacket.Packet) {
 	}
 }
 
-func (s *sniMonitor) emitTLSEvent(ch *ClientHello, srcPort uint16, connKey ConnectionKey) {
+func (s *sniMonitor) emitTLSEvent(ch *ClientHello, srcPort uint16, connKey types.ConnectionKey) {
 	sni := ch.SNI
 
 	pid := s.lookupPID(srcPort)
@@ -271,7 +272,7 @@ func (s *sniMonitor) emitTLSEvent(ch *ClientHello, srcPort uint16, connKey Conne
 	ja4 := ch.JA4()
 	procName := extractProcessName(procPath)
 
-	event := Event{
+	event := types.Event{
 		Timestamp:  time.Now(),
 		PID:        int(pid),
 		Process:    procName,
@@ -308,7 +309,7 @@ func (s *sniMonitor) emitDNSEvent(domain string, srcPort uint16) {
 
 	procName := extractProcessName(procPath)
 
-	event := Event{
+	event := types.Event{
 		Timestamp:  time.Now(),
 		PID:        int(pid),
 		Process:    procName,
@@ -348,9 +349,9 @@ func (s *sniMonitor) startStreamingDetection(interval time.Duration) {
 	}()
 }
 
-func (s *sniMonitor) getStreamingConnections() map[string]*TrafficFeatures {
+func (s *sniMonitor) getStreamingConnections() map[string]*types.TrafficFeatures {
 	s.mu.Lock()
-	sniToKey := make(map[string]ConnectionKey)
+	sniToKey := make(map[string]types.ConnectionKey)
 	for sni, key := range s.sniToConn {
 		sniToKey[sni] = key
 	}
@@ -358,18 +359,18 @@ func (s *sniMonitor) getStreamingConnections() map[string]*TrafficFeatures {
 	for ip, host := range s.ipToHost {
 		ipToHostCopy[ip] = host
 	}
-	connPIDCopy := make(map[ConnectionKey]int)
+	connPIDCopy := make(map[types.ConnectionKey]int)
 	for key, pid := range s.connPID {
 		connPIDCopy[key] = pid
 	}
 	s.mu.Unlock()
 
-	keyToSNI := make(map[ConnectionKey]string)
+	keyToSNI := make(map[types.ConnectionKey]string)
 	for sni, key := range sniToKey {
 		keyToSNI[key] = sni
 	}
 
-	result := make(map[string]*TrafficFeatures)
+	result := make(map[string]*types.TrafficFeatures)
 	activeConns := s.traffic.GetAllActive(30 * time.Second)
 
 	for key, features := range activeConns {
@@ -401,7 +402,7 @@ func (s *sniMonitor) getStreamingConnections() map[string]*TrafficFeatures {
 	return result
 }
 
-func (s *sniMonitor) emitStreamingEvent(sni string, features *TrafficFeatures) {
+func (s *sniMonitor) emitStreamingEvent(sni string, features *types.TrafficFeatures) {
 	procPath := getProcessPath(uint32(features.PID))
 	if !s.cfg.EnablePID0 && (features.PID == 0 || procPath == "") {
 		return
@@ -409,7 +410,7 @@ func (s *sniMonitor) emitStreamingEvent(sni string, features *TrafficFeatures) {
 
 	procName := extractProcessName(procPath)
 
-	event := Event{
+	event := types.Event{
 		Timestamp:  time.Now(),
 		PID:        features.PID,
 		Process:    procName,
@@ -519,6 +520,6 @@ func (s *sniMonitor) Stop() {
 	}
 }
 
-func (s *sniMonitor) Events() <-chan Event {
+func (s *sniMonitor) Events() <-chan types.Event {
 	return s.events
 }

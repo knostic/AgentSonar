@@ -1,14 +1,16 @@
 //go:build darwin
 
-package sai
+package capture
 
 import (
 	"sync"
 	"time"
+
+	"github.com/knostic/sai/types"
 )
 
 type connectionStats struct {
-	Key         ConnectionKey
+	Key         types.ConnectionKey
 	FirstSeen   time.Time
 	LastSeen    time.Time
 	PacketCount int
@@ -19,19 +21,19 @@ type connectionStats struct {
 }
 
 type trafficAnalyzer struct {
-	connections map[ConnectionKey]*connectionStats
+	connections map[types.ConnectionKey]*connectionStats
 	mu          sync.RWMutex
 	maxConns    int
 }
 
 func newTrafficAnalyzer() *trafficAnalyzer {
 	return &trafficAnalyzer{
-		connections: make(map[ConnectionKey]*connectionStats),
+		connections: make(map[types.ConnectionKey]*connectionStats),
 		maxConns:    10000,
 	}
 }
 
-func (t *trafficAnalyzer) TrackConnection(key ConnectionKey) {
+func (t *trafficAnalyzer) TrackConnection(key types.ConnectionKey) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -49,7 +51,7 @@ func (t *trafficAnalyzer) TrackConnection(key ConnectionKey) {
 	}
 }
 
-func (t *trafficAnalyzer) UpdateFromNetstat(key ConnectionKey, bytesIn, bytesOut int64, packetsIn, packetsOut int) {
+func (t *trafficAnalyzer) UpdateFromNetstat(key types.ConnectionKey, bytesIn, bytesOut int64, packetsIn, packetsOut int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -66,7 +68,7 @@ func (t *trafficAnalyzer) UpdateFromNetstat(key ConnectionKey, bytesIn, bytesOut
 	stats.LastSeen = time.Now()
 }
 
-func (t *trafficAnalyzer) GetFeatures(key ConnectionKey) *TrafficFeatures {
+func (t *trafficAnalyzer) GetFeatures(key types.ConnectionKey) *types.TrafficFeatures {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -78,12 +80,12 @@ func (t *trafficAnalyzer) GetFeatures(key ConnectionKey) *TrafficFeatures {
 	return extractFeatures(stats)
 }
 
-func (t *trafficAnalyzer) GetAllActive(since time.Duration) map[ConnectionKey]*TrafficFeatures {
+func (t *trafficAnalyzer) GetAllActive(since time.Duration) map[types.ConnectionKey]*types.TrafficFeatures {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
 	cutoff := time.Now().Add(-since)
-	result := make(map[ConnectionKey]*TrafficFeatures)
+	result := make(map[types.ConnectionKey]*types.TrafficFeatures)
 
 	for key, stats := range t.connections {
 		if stats.LastSeen.After(cutoff) {
@@ -94,8 +96,8 @@ func (t *trafficAnalyzer) GetAllActive(since time.Duration) map[ConnectionKey]*T
 	return result
 }
 
-func extractFeatures(stats *connectionStats) *TrafficFeatures {
-	f := &TrafficFeatures{
+func extractFeatures(stats *connectionStats) *types.TrafficFeatures {
+	f := &types.TrafficFeatures{
 		StartTime:  stats.FirstSeen,
 		Duration:   stats.LastSeen.Sub(stats.FirstSeen),
 		PacketsIn:  stats.PacketsIn,
@@ -131,7 +133,7 @@ func detectStreaming(stats *connectionStats) bool {
 	return avgPacketSize < 500 && packetsPerSecond > 2
 }
 
-func (t *trafficAnalyzer) GetLastActivity(key ConnectionKey) time.Time {
+func (t *trafficAnalyzer) GetLastActivity(key types.ConnectionKey) time.Time {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	if stats, ok := t.connections[key]; ok {
@@ -155,7 +157,7 @@ func (t *trafficAnalyzer) CountConnectionsToIP(dstIP string, activeSince time.Du
 }
 
 func (t *trafficAnalyzer) evictOldest() {
-	var oldestKey ConnectionKey
+	var oldestKey types.ConnectionKey
 	var oldestTime time.Time
 
 	for key, stats := range t.connections {

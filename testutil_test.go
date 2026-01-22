@@ -3,7 +3,6 @@
 package sai
 
 import (
-	"encoding/binary"
 	"path/filepath"
 	"testing"
 	"time"
@@ -39,6 +38,26 @@ func makeStatsInput(bytesIn, bytesOut int64, packetsIn, packetsOut int, duration
 		TotalDurationMs: durationMs,
 		Sources:         sources,
 	}
+}
+
+func withTempDB(t *testing.T, fn func(db *DB)) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.db")
+	db, err := OpenDB(path)
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	defer db.Close()
+	fn(db)
+}
+
+func withTempFilterSet(t *testing.T, fn func(fs *FilterSet, path string)) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "filters.bin")
+	fs := NewFilterSet()
+	fn(fs, path)
 }
 
 func makeDNSQueryPacket(domain string) []byte {
@@ -113,74 +132,6 @@ func parseIPv4(ip string) []byte {
 	return result
 }
 
-func makeClientHelloPacket(sni string, ciphers, extensions []uint16) []byte {
-	hello := make([]byte, 0, 512)
-
-	hello = append(hello, 0x03, 0x03)
-	hello = append(hello, make([]byte, 32)...)
-
-	hello = append(hello, 0)
-
-	cipherLen := len(ciphers) * 2
-	hello = append(hello, byte(cipherLen>>8), byte(cipherLen))
-	for _, c := range ciphers {
-		hello = append(hello, byte(c>>8), byte(c))
-	}
-
-	hello = append(hello, 1, 0)
-
-	var extData []byte
-	for _, ext := range extensions {
-		switch ext {
-		case 0x0000:
-			sniData := buildSNIExtension(sni)
-			extData = append(extData, 0, 0)
-			extData = append(extData, byte(len(sniData)>>8), byte(len(sniData)))
-			extData = append(extData, sniData...)
-		default:
-			extData = append(extData, byte(ext>>8), byte(ext))
-			extData = append(extData, 0, 0)
-		}
-	}
-
-	extLen := len(extData)
-	hello = append(hello, byte(extLen>>8), byte(extLen))
-	hello = append(hello, extData...)
-
-	handshake := make([]byte, 4)
-	handshake[0] = 0x01
-	helloLen := len(hello)
-	handshake[1] = byte(helloLen >> 16)
-	handshake[2] = byte(helloLen >> 8)
-	handshake[3] = byte(helloLen)
-	handshake = append(handshake, hello...)
-
-	record := make([]byte, 5)
-	record[0] = 0x16
-	record[1] = 0x03
-	record[2] = 0x01
-	recordLen := len(handshake)
-	record[3] = byte(recordLen >> 8)
-	record[4] = byte(recordLen)
-	record = append(record, handshake...)
-
-	return record
-}
-
-func buildSNIExtension(sni string) []byte {
-	nameBytes := []byte(sni)
-	listLen := 3 + len(nameBytes)
-
-	data := make([]byte, 2+listLen)
-	data[0] = byte(listLen >> 8)
-	data[1] = byte(listLen)
-	data[2] = 0
-	data[3] = byte(len(nameBytes) >> 8)
-	data[4] = byte(len(nameBytes))
-	copy(data[5:], nameBytes)
-	return data
-}
-
 func makeClientHelloWithALPN(sni string, ciphers, extensions []uint16, alpn string) []byte {
 	hello := make([]byte, 0, 512)
 
@@ -239,6 +190,20 @@ func makeClientHelloWithALPN(sni string, ciphers, extensions []uint16, alpn stri
 	return record
 }
 
+func buildSNIExtension(sni string) []byte {
+	nameBytes := []byte(sni)
+	listLen := 3 + len(nameBytes)
+
+	data := make([]byte, 2+listLen)
+	data[0] = byte(listLen >> 8)
+	data[1] = byte(listLen)
+	data[2] = 0
+	data[3] = byte(len(nameBytes) >> 8)
+	data[4] = byte(len(nameBytes))
+	copy(data[5:], nameBytes)
+	return data
+}
+
 func buildALPNExtension(alpn string) []byte {
 	alpnBytes := []byte(alpn)
 	listLen := 1 + len(alpnBytes)
@@ -251,85 +216,3 @@ func buildALPNExtension(alpn string) []byte {
 	return data
 }
 
-func makeClientHelloWithSupportedVersions(sni string, ciphers []uint16, versions []uint16) []byte {
-	hello := make([]byte, 0, 512)
-
-	hello = append(hello, 0x03, 0x03)
-	hello = append(hello, make([]byte, 32)...)
-	hello = append(hello, 0)
-
-	cipherLen := len(ciphers) * 2
-	hello = append(hello, byte(cipherLen>>8), byte(cipherLen))
-	for _, c := range ciphers {
-		hello = append(hello, byte(c>>8), byte(c))
-	}
-
-	hello = append(hello, 1, 0)
-
-	var extData []byte
-
-	if sni != "" {
-		sniData := buildSNIExtension(sni)
-		extData = append(extData, 0, 0)
-		extData = append(extData, byte(len(sniData)>>8), byte(len(sniData)))
-		extData = append(extData, sniData...)
-	}
-
-	versionsData := buildSupportedVersionsExtension(versions)
-	extData = append(extData, 0, 0x2b)
-	extData = append(extData, byte(len(versionsData)>>8), byte(len(versionsData)))
-	extData = append(extData, versionsData...)
-
-	extLen := len(extData)
-	hello = append(hello, byte(extLen>>8), byte(extLen))
-	hello = append(hello, extData...)
-
-	handshake := make([]byte, 4)
-	handshake[0] = 0x01
-	helloLen := len(hello)
-	handshake[1] = byte(helloLen >> 16)
-	handshake[2] = byte(helloLen >> 8)
-	handshake[3] = byte(helloLen)
-	handshake = append(handshake, hello...)
-
-	record := make([]byte, 5)
-	record[0] = 0x16
-	record[1] = 0x03
-	record[2] = 0x01
-	recordLen := len(handshake)
-	record[3] = byte(recordLen >> 8)
-	record[4] = byte(recordLen)
-	record = append(record, handshake...)
-
-	return record
-}
-
-func buildSupportedVersionsExtension(versions []uint16) []byte {
-	listLen := len(versions) * 2
-	data := make([]byte, 1+listLen)
-	data[0] = byte(listLen)
-	for i, v := range versions {
-		binary.BigEndian.PutUint16(data[1+i*2:], v)
-	}
-	return data
-}
-
-func withTempDB(t *testing.T, fn func(db *DB)) {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.db")
-	db, err := OpenDB(path)
-	if err != nil {
-		t.Fatalf("failed to open test db: %v", err)
-	}
-	defer db.Close()
-	fn(db)
-}
-
-func withTempFilterSet(t *testing.T, fn func(fs *FilterSet, path string)) {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "filters.bin")
-	fs := NewFilterSet()
-	fn(fs, path)
-}

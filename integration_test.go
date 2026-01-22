@@ -5,6 +5,8 @@ package sai
 import (
 	"testing"
 	"time"
+
+	"github.com/knostic/sai/internal/capture"
 )
 
 func TestKnownAgentFullFlow(t *testing.T) {
@@ -228,13 +230,13 @@ func TestEventPersistenceAndReplay(t *testing.T) {
 
 func TestDNSAndTLSCombined(t *testing.T) {
 	queryPkt := makeDNSQueryPacket("api.anthropic.com")
-	domain := ParseDNSQuery(queryPkt)
+	domain := capture.ParseDNSQuery(queryPkt)
 	if domain != "api.anthropic.com" {
 		t.Errorf("DNS query domain = %q, want %q", domain, "api.anthropic.com")
 	}
 
 	responsePkt := makeDNSResponsePacket("api.anthropic.com", []string{"104.18.1.1", "104.18.2.2"})
-	respDomain, ips := ParseDNSResponseIPs(responsePkt)
+	respDomain, ips := capture.ParseDNSResponseIPs(responsePkt)
 	if respDomain != "api.anthropic.com" {
 		t.Errorf("DNS response domain = %q, want %q", respDomain, "api.anthropic.com")
 	}
@@ -246,7 +248,7 @@ func TestDNSAndTLSCombined(t *testing.T) {
 	extensions := []uint16{0x0000, 0x0010, 0x000b}
 	tlsPkt := makeClientHelloWithALPN("api.anthropic.com", ciphers, extensions, "h2")
 
-	ch := ParseClientHello(tlsPkt)
+	ch := capture.ParseClientHello(tlsPkt)
 	if ch == nil {
 		t.Fatal("ParseClientHello returned nil")
 	}
