@@ -3,13 +3,12 @@
 package sai
 
 import (
+	"maps"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
 
-// Accumulator tracks events and computes confidence for process:domain pairs
 type Accumulator interface {
 	Record(event Event)
 	Confidence(process, domain string) Confidence
@@ -17,14 +16,13 @@ type Accumulator interface {
 	Stats(process, domain string) *PairStats
 }
 
-// PairStats holds accumulated statistics for a process:domain pair
 type PairStats struct {
 	Process         string
 	Domain          string
 	Count           int
 	FirstSeen       time.Time
 	LastSeen        time.Time
-	Sources         map[string]int // tls, dns, streaming counts
+	Sources         map[string]int
 	IsProgrammatic  bool
 	TotalBytesIn    int64
 	TotalBytesOut   int64
@@ -32,21 +30,34 @@ type PairStats struct {
 	TotalPacketsOut int
 	TotalDurationMs int64
 	MaxConcurrent   int
-	BaseConfidence  Confidence // from classifier
+	BaseConfidence  Confidence
 }
 
-// MemoryAccumulator is an in-memory Accumulator implementation
 type MemoryAccumulator struct {
-	classifier *Classifier
-	pairs      map[string]*PairStats
-	mu         sync.RWMutex
+	filterSet *FilterSet
+	registry  *ClassifierRegistry
+	pairs     map[string]*PairStats
+	mu        sync.RWMutex
 }
 
 func NewAccumulator() *MemoryAccumulator {
+	return NewAccumulatorWithFilters(NewFilterSet(), NewClassifierRegistry())
+}
+
+func NewAccumulatorWithFilters(filterSet *FilterSet, registry *ClassifierRegistry) *MemoryAccumulator {
 	return &MemoryAccumulator{
-		classifier: NewClassifier(),
-		pairs:      make(map[string]*PairStats),
+		filterSet: filterSet,
+		registry:  registry,
+		pairs:     make(map[string]*PairStats),
 	}
+}
+
+func (a *MemoryAccumulator) FilterSet() *FilterSet {
+	return a.filterSet
+}
+
+func (a *MemoryAccumulator) Registry() *ClassifierRegistry {
+	return a.registry
 }
 
 func (a *MemoryAccumulator) Record(event Event) {
@@ -63,7 +74,7 @@ func (a *MemoryAccumulator) Record(event Event) {
 			FirstSeen: event.Timestamp,
 			Sources:   make(map[string]int),
 		}
-		stats.BaseConfidence = a.classifyDomain(event.Domain)
+		stats.BaseConfidence = a.classifyDomain(event.Process, event.Domain)
 		a.pairs[key] = stats
 	}
 
@@ -96,72 +107,19 @@ func (a *MemoryAccumulator) Record(event Event) {
 	}
 }
 
-var infrastructurePenalties = map[string]Confidence{
-	// Logging/observability - very unlikely to be LLM traffic
-	"logs":      0.5,
-	"log":       0.5,
-	"logging":   0.5,
-	"telemetry": 0.5,
-	"metrics":   0.4,
-	"intake":    0.4,
-
-	// Analytics/tracking/experimentation
-	"analytics": 0.4,
-	"tracking":  0.4,
-	"tracker":   0.4,
-	"statsig":   0.4,
-	"events":    0.3,
-
-	// Infrastructure
-	"cdn":        0.3,
-	"static":     0.3,
-	"assets":     0.3,
-	"media":      0.3,
-	"gateway":    0.3,
-	"cloudkit":       0.4,
-	"apple-cloudkit": 0.4,
-	"cloudfront":     0.4,
-	"cloudflare":     0.4,
-	"akamai":         0.4,
-	"fastly":         0.4,
-	"icloud":         0.4,
-
-	// Status/health
-	"stats":  0.3,
-	"status": 0.3,
-	"health": 0.3,
-
-	// Auth/security (rarely LLM endpoints)
-	"auth":   0.2,
-	"oauth":  0.2,
-	"oauth2": 0.2,
-	"login":  0.2,
-	"sso":    0.2,
-	"ocsp":  0.5,
-	"ocsp2": 0.5,
-	"crl":   0.5,
-}
-
-func infrastructurePenalty(domain string) Confidence {
-	var totalPenalty Confidence
-	parts := strings.Split(domain, ".")
-	for _, part := range parts {
-		if penalty, ok := infrastructurePenalties[part]; ok {
-			totalPenalty += penalty
-		}
+func (a *MemoryAccumulator) classifyDomain(process, domain string) Confidence {
+	if a.filterSet == nil {
+		return 0.0
 	}
-	return totalPenalty
-}
 
-func (a *MemoryAccumulator) classifyDomain(domain string) Confidence {
-	domain = normalizeDomain(domain)
+	if a.filterSet.MatchAgent(process, domain) != "" {
+		return 1.0
+	}
 
-	if a.classifier.aiFilter.Test(domain) {
-		return 0.9
+	if a.filterSet.IsNonAI(process, domain) || a.filterSet.IsNonAIDomain(domain) {
+		return 0.0
 	}
-	if a.classifier.IsAI(domain) {
-		return 0.6
-	}
+
 	return 0.0
 }
 
@@ -173,97 +131,39 @@ func (a *MemoryAccumulator) Confidence(process, domain string) Confidence {
 
 	stats, ok := a.pairs[key]
 	if !ok {
-		conf := a.classifyDomain(domain) - infrastructurePenalty(domain)
-		if conf < 0 {
-			return 0
+		base := a.classifyDomain(process, domain)
+		if base > 0 {
+			return base
 		}
-		return conf
+		if a.registry != nil {
+			return a.registry.Classify(ClassifierInput{
+				Domain:  domain,
+				Process: process,
+			})
+		}
+		return 0
+	}
+
+	if stats.BaseConfidence >= 1.0 {
+		return 1.0
+	}
+	if stats.BaseConfidence == 0.0 && a.filterSet != nil {
+		if a.filterSet.IsNonAI(process, domain) || a.filterSet.IsNonAIDomain(domain) {
+			return 0.0
+		}
 	}
 
 	conf := stats.BaseConfidence
-
-	// Derive ratios from raw data
-	var byteRatio, packetRatio, avgPacketSize, packetsPerSec float64
-	if stats.TotalBytesOut > 0 {
-		byteRatio = float64(stats.TotalBytesIn) / float64(stats.TotalBytesOut)
-	}
-	if stats.TotalPacketsOut > 0 {
-		packetRatio = float64(stats.TotalPacketsIn) / float64(stats.TotalPacketsOut)
-	}
-	if stats.TotalPacketsIn > 0 {
-		avgPacketSize = float64(stats.TotalBytesIn) / float64(stats.TotalPacketsIn)
-	}
-	if stats.TotalDurationMs > 0 {
-		packetsPerSec = float64(stats.TotalPacketsIn) / (float64(stats.TotalDurationMs) / 1000)
-	}
-
-	// Byte asymmetry (large response vs small request)
-	if byteRatio > 5 {
-		conf += 0.10
-	}
-	if byteRatio > 20 {
-		conf += 0.05
-	}
-
-	// Packet ratio (many response packets per request)
-	if packetRatio > 5 {
-		conf += 0.10
-	}
-	if packetRatio > 20 {
-		conf += 0.05
-	}
-
-	// Small average packet size (token streaming)
-	if avgPacketSize > 0 && avgPacketSize < 500 {
-		conf += 0.10
-	}
-	if avgPacketSize > 0 && avgPacketSize < 200 {
-		conf += 0.05
-	}
-
-	// Sustained packet rate (continuous streaming)
-	if packetsPerSec > 2 {
-		conf += 0.10
-	}
-
-	// Long-lived connection
-	if stats.TotalDurationMs > 5000 {
-		conf += 0.10
-	}
-
-	// Source combination scoring
-	hasTLS := stats.Sources["tls"] > 0
-	hasStreaming := stats.Sources["streaming"] > 0
-	if hasTLS && hasStreaming {
-		conf += 0.15 // Definitive connection + AI behavior
-	} else if hasTLS {
-		conf += 0.05 // Saw handshake, no streaming yet
-	} else if hasStreaming {
-		conf += 0.05 // Detected pattern, missed handshake
-	}
-
-	// Concurrent connections to same destination
-	if stats.MaxConcurrent > 1 {
-		conf += 0.05
-	}
-
-	// Programmatic TLS client
-	if stats.IsProgrammatic {
-		conf += 0.10
-	}
-
-	// Observation frequency
-	if stats.Count >= 3 {
-		conf += 0.05
-	}
-	if stats.Count >= 10 {
-		conf += 0.05
-	}
-
-	// Infrastructure penalty (applied after all boosts)
-	conf -= infrastructurePenalty(stats.Domain)
-	if conf < 0 {
-		conf = 0
+	if a.registry != nil {
+		input := ClassifierInput{
+			Domain:  domain,
+			Process: process,
+			Stats:   stats,
+		}
+		heuristic := a.registry.Classify(input)
+		if heuristic > conf {
+			conf = heuristic
+		}
 	}
 
 	if conf > 0.99 {
@@ -294,9 +194,7 @@ func (a *MemoryAccumulator) Stats(process, domain string) *PairStats {
 	if stats, ok := a.pairs[key]; ok {
 		cp := *stats
 		cp.Sources = make(map[string]int)
-		for k, v := range stats.Sources {
-			cp.Sources[k] = v
-		}
+		maps.Copy(cp.Sources, stats.Sources)
 		return &cp
 	}
 	return nil

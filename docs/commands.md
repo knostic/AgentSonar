@@ -74,10 +74,10 @@ sai events [flags]
 Manage AI agent definitions.
 
 ```bash
-sai agents                              # list all agents
-sai agents add <name> <process>         # create agent with process pattern
-sai agents add-domain <name> <domain>   # add domain pattern to agent
-sai agents rm <name>                    # remove agent
+sai agents                                      # list all agents
+sai agents add <name> <process> <domain>        # create agent
+sai agents add-domain <name> <domain>           # add domain to existing agent
+sai agents rm <name>                            # remove agent
 ```
 
 Patterns support:
@@ -85,15 +85,17 @@ Patterns support:
 - `*.domain.com` - match subdomains
 - `prefix*` - match prefix
 
+Agents are stored in `~/.config/sai/filters.bin` alongside the non-AI bloom filter.
+
 ## sai ignore
 
-Ignore domains (if it's not an LLM, it's not an agent).
+Add domain to non-AI bloom filter.
 
 ```bash
-sai ignore              # list ignore rules
-sai ignore <url>        # add ignore rule (wildcards supported: *.example.com)
-sai ignore rm <url>     # remove ignore rule
+sai ignore <domain>     # add domain to non-AI filter
 ```
+
+Ignored domains are filtered from output (unless `-a` flag is used).
 
 ## sai triage
 
@@ -106,29 +108,51 @@ sai triage
 Shows each unique process:domain pair with computed confidence level.
 
 Actions:
-- `a` - add as agent (uses process name, `*.basedomain`)
-- `A` - add as agent with prompts to edit name
-- `i` - ignore domain (`basedomain`)
-- `I` - ignore with prompt to edit URL (defaults to `*.basedomain`)
+- `a` - add as agent (uses process name)
+- `A` - add as agent with prompts to edit name/domain
+- `n` - mark as noise (adds to non-AI bloom filter)
 - `s` - skip
-- `q` - quit
+- `q` - quit and save filters
 
 ## sai sig
 
-Signature management - export/import agent definitions.
+Signature management - export/import signatures file.
 
 ```bash
-sai sig export              # export agents and ignores as JSON
-sai sig import < file.json  # import from JSON
+sai sig export <file>   # export signatures to file
+sai sig import <file>   # import signatures from file
 ```
 
-JSON format:
+Signatures file (`~/.config/sai/filters.bin`) contains:
+- Named AI agents (process + domain patterns)
+- Non-AI bloom filter (ignored domains)
+
+## sai classifier
+
+Manage external classifiers for scoring unknown traffic.
+
+```bash
+sai classifier list             # list loaded classifiers
+sai classifier load <config>    # load external classifier
+sai classifier unload <name>    # unload classifier
+```
+
+External classifiers are long-running processes that receive JSON on stdin and return confidence scores on stdout.
+
+Config format:
 ```json
 {
-  "version": "2026-01-22",
-  "agents": [{"name": "Cursor", "process": "cursor", "domains": ["*.anthropic.com"]}],
-  "ignore": [{"url": "*.cloudflare.com"}]
+  "name": "ml-model",
+  "command": "/path/to/classifier",
+  "args": ["--model", "default"],
+  "timeout_ms": 5000
 }
+```
+
+Protocol:
+```
+stdin:  {"domain":"api.example.com","process":"app","source":"tls","stats":{...}}
+stdout: {"confidence":0.85}
 ```
 
 ## sai doctor

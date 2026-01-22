@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -51,11 +52,28 @@ func init() {
 	rootCmd.AddCommand(agentsCmd)
 	rootCmd.AddCommand(ignoreCmd)
 	rootCmd.AddCommand(sigCmd)
+	rootCmd.AddCommand(classifierCmd)
 }
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
+	}
+}
+
+func loadFilterSet() *sai.FilterSet {
+	filterSet := sai.NewFilterSet()
+	if sai.FilterFileExists() {
+		if err := filterSet.Load(sai.DefaultFilterPath()); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not load filters: %v\n", err)
+		}
+	}
+	return filterSet
+}
+
+func saveFilterSet(filterSet *sai.FilterSet) {
+	if err := filterSet.Save(sai.DefaultFilterPath()); err != nil {
+		fmt.Fprintf(os.Stderr, "error saving filters: %v\n", err)
 	}
 }
 
@@ -117,11 +135,11 @@ var agentsCmd = &cobra.Command{
 }
 
 var agentsAddCmd = &cobra.Command{
-	Use:   "add <name> <process-pattern>",
-	Short: "Create agent with process pattern",
-	Args:  cobra.ExactArgs(2),
+	Use:   "add <name> <process-pattern> <domain-pattern>",
+	Short: "Create agent with process and domain pattern",
+	Args:  cobra.ExactArgs(3),
 	Run: func(cmd *cobra.Command, args []string) {
-		addAgent(args[0], args[1])
+		addAgent(args[0], args[1], args[2])
 	},
 }
 
@@ -150,28 +168,12 @@ func init() {
 }
 
 var ignoreCmd = &cobra.Command{
-	Use:   "ignore [url]",
-	Short: "Manage ignore rules (no args lists, with arg adds)",
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
-			listIgnored()
-		} else {
-			addIgnore(args[0])
-		}
-	},
-}
-
-var ignoreRmCmd = &cobra.Command{
-	Use:   "rm <url>",
-	Short: "Remove ignore rule",
+	Use:   "ignore <domain>",
+	Short: "Add domain to non-AI filter",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		removeIgnore(args[0])
+		addIgnore(args[0])
 	},
-}
-
-func init() {
-	ignoreCmd.AddCommand(ignoreRmCmd)
 }
 
 var triageCmd = &cobra.Command{
@@ -188,24 +190,63 @@ var sigCmd = &cobra.Command{
 }
 
 var sigExportCmd = &cobra.Command{
-	Use:   "export",
-	Short: "Export your agents as JSON",
+	Use:   "export <file>",
+	Short: "Export signatures to file",
+	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		exportSignatures()
+		exportSignatures(args[0])
 	},
 }
 
 var sigImportCmd = &cobra.Command{
-	Use:   "import",
-	Short: "Import agent definitions from stdin",
+	Use:   "import <file>",
+	Short: "Import signatures from file",
+	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		importSignatures()
+		importSignatures(args[0])
 	},
 }
 
 func init() {
 	sigCmd.AddCommand(sigExportCmd)
 	sigCmd.AddCommand(sigImportCmd)
+}
+
+var classifierCmd = &cobra.Command{
+	Use:   "classifier",
+	Short: "Manage external classifiers",
+}
+
+var classifierListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List loaded classifiers",
+	Run: func(cmd *cobra.Command, args []string) {
+		listClassifiers()
+	},
+}
+
+var classifierLoadCmd = &cobra.Command{
+	Use:   "load <config.json>",
+	Short: "Load external classifier",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		loadClassifier(args[0])
+	},
+}
+
+var classifierUnloadCmd = &cobra.Command{
+	Use:   "unload <name>",
+	Short: "Unload classifier",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		unloadClassifier(args[0])
+	},
+}
+
+func init() {
+	classifierCmd.AddCommand(classifierListCmd)
+	classifierCmd.AddCommand(classifierLoadCmd)
+	classifierCmd.AddCommand(classifierUnloadCmd)
 }
 
 var setupCmd = &cobra.Command{
@@ -240,7 +281,10 @@ func runMonitor(cmd *cobra.Command) {
 		}
 	}()
 
-	acc := sai.NewAccumulator()
+	filterSet := loadFilterSet()
+	registry := sai.NewClassifierRegistry()
+	registry.Add(sai.NewDefaultClassifier())
+	acc := sai.NewAccumulatorWithFilters(filterSet, registry)
 
 	mon := sai.NewMonitor(sai.Config{
 		Interface:  iface,
@@ -262,21 +306,19 @@ func runMonitor(cmd *cobra.Command) {
 		case <-sigCh:
 			return
 		case event := <-mon.Events():
-			if db != nil {
-				event.Agent = db.MatchAgent(event.Process, event.Domain)
-			}
+			event.Agent = filterSet.MatchAgent(event.Process, event.Domain)
 
 			acc.Record(event)
 			event.Confidence = acc.Confidence(event.Process, event.Domain)
 			if event.Agent != "" {
-				event.Confidence = 0.95
+				event.Confidence = 1.0
 			}
 
 			if db != nil {
 				db.InsertEvent(event)
 			}
 
-			if !allDomains && db != nil && db.IsIgnored(event.Domain) {
+			if !allDomains && filterSet.IsNonAIDomain(event.Domain) {
 				continue
 			}
 
@@ -318,8 +360,12 @@ func runEvents(cmd *cobra.Command) {
 		}
 	}
 
+	filterSet := loadFilterSet()
+	registry := sai.NewClassifierRegistry()
+	registry.Add(sai.NewDefaultClassifier())
+	acc := sai.NewAccumulatorWithFilters(filterSet, registry)
+
 	allEvents, _ := db.QueryEvents(0, "", "", 0)
-	acc := sai.NewAccumulator()
 	for _, e := range allEvents {
 		acc.Record(e)
 	}
@@ -333,19 +379,19 @@ func runEvents(cmd *cobra.Command) {
 	if jsonOutput {
 		enc := json.NewEncoder(os.Stdout)
 		for _, e := range events {
-			e.Agent = db.MatchAgent(e.Process, e.Domain)
+			e.Agent = filterSet.MatchAgent(e.Process, e.Domain)
 			e.Confidence = acc.Confidence(e.Process, e.Domain)
 			if e.Agent != "" {
-				e.Confidence = 0.95
+				e.Confidence = 1.0
 			}
 			enc.Encode(e)
 		}
 	} else {
 		for _, e := range events {
-			agent := db.MatchAgent(e.Process, e.Domain)
+			agent := filterSet.MatchAgent(e.Process, e.Domain)
 			conf := acc.Confidence(e.Process, e.Domain)
 			if agent != "" {
-				conf = 0.95
+				conf = 1.0
 			} else {
 				agent = "unknown"
 			}
@@ -357,18 +403,8 @@ func runEvents(cmd *cobra.Command) {
 }
 
 func listAgents() {
-	db, err := sai.OpenDB(sai.DefaultDBPath())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	agents, err := db.ListAgents()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
+	filterSet := loadFilterSet()
+	agents := filterSet.ListAgents()
 
 	if len(agents) == 0 {
 		fmt.Println("no agents configured")
@@ -376,110 +412,43 @@ func listAgents() {
 	}
 
 	for _, a := range agents {
-		fmt.Printf("%s (process: %s)\n", a.Name, a.ProcessPattern)
+		fmt.Printf("%s (process: %s)\n", a.Name, a.Process)
 		for _, d := range a.Domains {
 			fmt.Printf("  -> %s\n", d)
 		}
 	}
 }
 
-func addAgent(name, processPattern string) {
-	db, err := sai.OpenDB(sai.DefaultDBPath())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	if err := db.AddAgent(name, processPattern); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("added agent: %s (process: %s)\n", name, processPattern)
+func addAgent(name, process, domain string) {
+	filterSet := loadFilterSet()
+	filterSet.AddAgent(name, process, []string{domain})
+	saveFilterSet(filterSet)
+	fmt.Printf("added agent: %s (process: %s, domain: %s)\n", name, process, domain)
 }
 
 func addAgentDomain(name, domain string) {
-	db, err := sai.OpenDB(sai.DefaultDBPath())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	filterSet := loadFilterSet()
+	if filterSet.GetAgent(name) == nil {
+		fmt.Fprintf(os.Stderr, "error: agent %s not found\n", name)
 		os.Exit(1)
 	}
-	defer db.Close()
-
-	if err := db.AddAgentDomain(name, domain); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
+	filterSet.AddAgentDomain(name, domain)
+	saveFilterSet(filterSet)
 	fmt.Printf("added domain %s to agent %s\n", domain, name)
 }
 
 func removeAgent(name string) {
-	db, err := sai.OpenDB(sai.DefaultDBPath())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	if err := db.DeleteAgent(name); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
+	filterSet := loadFilterSet()
+	filterSet.RemoveAgent(name)
+	saveFilterSet(filterSet)
 	fmt.Printf("removed agent: %s\n", name)
 }
 
-func addIgnore(url string) {
-	db, err := sai.OpenDB(sai.DefaultDBPath())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	if err := db.AddIgnore(url); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("ignoring: %s\n", url)
-}
-
-func listIgnored() {
-	db, err := sai.OpenDB(sai.DefaultDBPath())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	rules, err := db.ListIgnored()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-
-	if len(rules) == 0 {
-		fmt.Println("no ignore rules")
-		return
-	}
-
-	for _, r := range rules {
-		fmt.Println(r.URL)
-	}
-}
-
-func removeIgnore(url string) {
-	db, err := sai.OpenDB(sai.DefaultDBPath())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	if err := db.RemoveIgnore(url); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("removed ignore rule: %s\n", url)
+func addIgnore(domain string) {
+	filterSet := loadFilterSet()
+	filterSet.AddNonAIDomain(domain)
+	saveFilterSet(filterSet)
+	fmt.Printf("added to non-AI filter: %s\n", domain)
 }
 
 func runTriage() {
@@ -490,20 +459,19 @@ func runTriage() {
 	}
 	defer db.Close()
 
+	filterSet := loadFilterSet()
+	registry := sai.NewClassifierRegistry()
+	registry.Add(sai.NewDefaultClassifier())
+	acc := sai.NewAccumulatorWithFilters(filterSet, registry)
+
 	allEvents, _ := db.QueryEvents(0, "", "", 0)
-	acc := sai.NewAccumulator()
 	for _, e := range allEvents {
 		acc.Record(e)
 	}
 
-	events, err := db.GetUntriagedEvents(100)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-
+	events := allEvents
 	if len(events) == 0 {
-		fmt.Println("no untriaged events")
+		fmt.Println("no events to triage")
 		return
 	}
 
@@ -521,15 +489,18 @@ func runTriage() {
 		if seen[key] {
 			continue
 		}
-		if db.MatchAgent(e.Process, e.Domain) != "" || db.IsIgnored(e.Domain) {
+		if filterSet.MatchAgent(e.Process, e.Domain) != "" {
+			continue
+		}
+		if filterSet.IsNonAI(e.Process, e.Domain) || filterSet.IsNonAIDomain(e.Domain) {
 			continue
 		}
 
 		conf := acc.Confidence(e.Process, e.Domain)
-		fmt.Printf("\n%s -> %s confidence: %s\n", e.Process, e.Domain, conf)
+		fmt.Printf("\n%s -> %s AI confidence: %s\n", e.Process, e.Domain, conf)
 		fmt.Printf("  binary: %s\n", e.BinaryPath)
 		fmt.Printf("  source: %s, ja4: %s\n", e.Source, e.JA4)
-		fmt.Print("\n[a]gent (A to edit), [i]gnore (I to edit), [s]kip, [q]uit? ")
+		fmt.Print("\n[a]gent (A to edit), [n]oise, [s]kip, [q]uit? ")
 
 		input, _ := reader.ReadString('\n')
 		input = strings.TrimSpace(input)
@@ -551,86 +522,95 @@ func runTriage() {
 					domainPattern = d
 				}
 			}
-			agent, _ := db.GetAgent(name)
-			if agent == nil {
-				db.AddAgent(name, e.Process)
+			if filterSet.GetAgent(name) == nil {
+				filterSet.AddAgent(name, e.Process, []string{domainPattern})
+			} else {
+				filterSet.AddAgentDomain(name, domainPattern)
 			}
-			db.AddAgentDomain(name, domainPattern)
 			fmt.Printf("agent: %s -> %s\n", name, domainPattern)
 
-		case "i", "ignore":
-			url := baseDomain(e.Domain)
-			if input == "I" {
-				url = promptURL(reader, e.Domain)
-				if url == "" {
-					continue
-				}
-			}
-			db.AddIgnore(url)
-			fmt.Printf("ignoring: %s\n", url)
+		case "n", "noise":
+			filterSet.AddNonAI(e.Process, e.Domain)
+			fmt.Printf("marked as noise: %s -> %s\n", e.Process, e.Domain)
 
 		case "q", "quit":
+			saveFilterSet(filterSet)
 			return
 		}
 
 		seen[key] = true
 	}
+
+	saveFilterSet(filterSet)
 }
 
-type SignatureFile struct {
-	Version string           `json:"version"`
-	Agents  []sai.Agent      `json:"agents"`
-	Ignore  []sai.IgnoreRule `json:"ignore"`
+func exportSignatures(dst string) {
+	if !sai.FilterFileExists() {
+		fmt.Fprintln(os.Stderr, "no filters to export")
+		os.Exit(1)
+	}
+
+	if err := copyFile(sai.DefaultFilterPath(), dst); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("exported signatures to %s\n", dst)
 }
 
-func exportSignatures() {
-	db, err := sai.OpenDB(sai.DefaultDBPath())
+func importSignatures(src string) {
+	if _, err := os.Stat(src); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %s not found\n", src)
+		os.Exit(1)
+	}
+
+	dst := sai.DefaultFilterPath()
+	if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := copyFile(src, dst); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("imported signatures from %s\n", src)
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
+}
+
+func listClassifiers() {
+	fmt.Println("default (built-in traffic heuristics)")
+}
+
+func loadClassifier(configPath string) {
+	c, err := sai.LoadProcessClassifier(configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	defer db.Close()
-
-	agents, _ := db.ListAgents()
-	ignored, _ := db.ListIgnored()
-
-	sig := SignatureFile{
-		Version: time.Now().Format("2006-01-02"),
-		Agents:  agents,
-		Ignore:  ignored,
-	}
-
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	enc.Encode(sig)
+	fmt.Printf("loaded classifier: %s\n", c.Name())
+	c.Close()
 }
 
-func importSignatures() {
-	db, err := sai.OpenDB(sai.DefaultDBPath())
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
-	var sig SignatureFile
-	if err := json.NewDecoder(os.Stdin).Decode(&sig); err != nil {
-		fmt.Fprintf(os.Stderr, "error parsing JSON: %v\n", err)
-		os.Exit(1)
-	}
-
-	for _, a := range sig.Agents {
-		db.AddAgent(a.Name, a.ProcessPattern)
-		for _, d := range a.Domains {
-			db.AddAgentDomain(a.Name, d)
-		}
-	}
-
-	for _, r := range sig.Ignore {
-		db.AddIgnore(r.URL)
-	}
-
-	fmt.Printf("imported %d agents, %d ignore rules\n", len(sig.Agents), len(sig.Ignore))
+func unloadClassifier(name string) {
+	fmt.Printf("unloaded classifier: %s\n", name)
 }
 
 func runSetup() {
@@ -669,6 +649,13 @@ func runDoctor() {
 		db.Close()
 	}
 
+	fmt.Print("Filters:         ")
+	if sai.FilterFileExists() {
+		fmt.Printf("ok (%s)\n", sai.DefaultFilterPath())
+	} else {
+		fmt.Println("not initialized")
+	}
+
 	fmt.Print("Interfaces:      ")
 	ifaces := listUsableInterfaces()
 	if len(ifaces) == 0 {
@@ -679,29 +666,12 @@ func runDoctor() {
 	}
 
 	fmt.Print("Agents:          ")
-	if db, err := sai.OpenDB(dbPath); err == nil {
-		agents, _ := db.ListAgents()
-		if len(agents) == 0 {
-			fmt.Println("none configured")
-		} else {
-			fmt.Printf("%d configured\n", len(agents))
-		}
-		db.Close()
+	filterSet := loadFilterSet()
+	agents := filterSet.ListAgents()
+	if len(agents) == 0 {
+		fmt.Println("none configured")
 	} else {
-		fmt.Println("- (db unavailable)")
-	}
-
-	fmt.Print("Ignore rules:    ")
-	if db, err := sai.OpenDB(dbPath); err == nil {
-		rules, _ := db.ListIgnored()
-		if len(rules) == 0 {
-			fmt.Println("none configured")
-		} else {
-			fmt.Printf("%d configured\n", len(rules))
-		}
-		db.Close()
-	} else {
-		fmt.Println("- (db unavailable)")
+		fmt.Printf("%d configured\n", len(agents))
 	}
 
 	fmt.Print("Events stored:   ")
@@ -879,32 +849,4 @@ func baseDomain(domain string) string {
 		return domain
 	}
 	return strings.Join(parts[len(parts)-2:], ".")
-}
-
-func promptURL(reader *bufio.Reader, originalDomain string) string {
-	defaultURL := "*." + baseDomain(originalDomain)
-	fmt.Printf("url [%s]: ", defaultURL)
-	input, _ := reader.ReadString('\n')
-	url := strings.TrimSpace(input)
-	if url == "" {
-		return defaultURL
-	}
-	if !matchPattern(strings.ToLower(originalDomain), strings.ToLower(url)) {
-		fmt.Printf("error: url %q does not match %q\n", url, originalDomain)
-		return ""
-	}
-	return url
-}
-
-func matchPattern(s, pattern string) bool {
-	if pattern == "*" {
-		return true
-	}
-	if strings.HasPrefix(pattern, "*.") {
-		return strings.HasSuffix(s, pattern[1:]) || s == pattern[2:]
-	}
-	if strings.HasSuffix(pattern, "*") {
-		return strings.HasPrefix(s, pattern[:len(pattern)-1])
-	}
-	return s == pattern || strings.Contains(s, pattern)
 }

@@ -52,15 +52,4 @@ type TrafficFeatures struct {
 	DstIP           string
 }
 
-// Agent represents a process that uses AI
-type Agent struct {
-	ID             int64    `json:"id,omitempty"`
-	Name           string   `json:"name"`
-	ProcessPattern string   `json:"process"`
-	Domains        []string `json:"domains,omitempty"`
-}
 
-type IgnoreRule struct {
-	ID  int64  `json:"id,omitempty"`
-	URL string `json:"url"`
-}

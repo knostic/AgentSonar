@@ -1,0 +1,161 @@
+# Creating Classifiers
+
+External classifiers are long-running processes that score unknown traffic. They receive JSON on stdin and return confidence scores on stdout.
+
+## Protocol
+
+### Input
+
+One JSON object per line:
+
+```json
+{
+  "domain": "api.example.com",
+  "process": "myapp",
+  "source": "tls",
+  "ja4": "t13d1516h2_8daaf6152771_b0da82dd1658",
+  "stats": {
+    "count": 5,
+    "bytes_in": 56789,
+    "bytes_out": 1234,
+    "packets_in": 100,
+    "packets_out": 10,
+    "duration_ms": 5000,
+    "max_concurrent": 2,
+    "is_programmatic": true,
+    "sources": {"tls": 3, "streaming": 2}
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `domain` | string | Destination domain |
+| `process` | string | Process name |
+| `source` | string | Detection source: `tls`, `dns`, `streaming` |
+| `ja4` | string | TLS fingerprint (optional) |
+| `stats` | object | Traffic statistics (optional, may be null) |
+
+### Stats object
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `count` | int | Number of observations |
+| `bytes_in` | int64 | Total bytes received |
+| `bytes_out` | int64 | Total bytes sent |
+| `packets_in` | int | Total packets received |
+| `packets_out` | int | Total packets sent |
+| `duration_ms` | int64 | Total connection duration |
+| `max_concurrent` | int | Max concurrent connections observed |
+| `is_programmatic` | bool | TLS client appears programmatic |
+| `sources` | map | Count by detection source |
+
+### Output
+
+One JSON object per line:
+
+```json
+{"confidence": 0.85}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `confidence` | float64 | Score from 0.0 (not AI) to 1.0 (definitely AI) |
+
+## Example: Python classifier
+
+```python
+#!/usr/bin/env python3
+import json
+import sys
+
+# Known AI domains (simple lookup)
+AI_DOMAINS = {"openai.com", "anthropic.com", "cohere.ai"}
+
+def classify(data):
+    domain = data.get("domain", "")
+
+    # Check domain suffix
+    for ai in AI_DOMAINS:
+        if domain.endswith(ai):
+            return 0.9
+
+    # Check traffic patterns
+    stats = data.get("stats")
+    if not stats:
+        return 0.0
+
+    confidence = 0.0
+
+    # High byte ratio (large response vs small request)
+    if stats["bytes_out"] > 0:
+        ratio = stats["bytes_in"] / stats["bytes_out"]
+        if ratio > 10:
+            confidence += 0.3
+
+    # Streaming detection
+    if stats["sources"].get("streaming", 0) > 0:
+        confidence += 0.2
+
+    # Long-lived connection
+    if stats["duration_ms"] > 5000:
+        confidence += 0.1
+
+    return min(confidence, 0.99)
+
+if __name__ == "__main__":
+    for line in sys.stdin:
+        try:
+            data = json.loads(line)
+            score = classify(data)
+            print(json.dumps({"confidence": score}), flush=True)
+        except:
+            print(json.dumps({"confidence": 0.0}), flush=True)
+```
+
+## Example: Shell classifier
+
+```bash
+#!/bin/bash
+# Simple domain-based classifier
+
+while IFS= read -r line; do
+    domain=$(echo "$line" | jq -r '.domain')
+
+    case "$domain" in
+        *openai.com|*anthropic.com|*cohere.ai)
+            echo '{"confidence": 0.9}'
+            ;;
+        *)
+            echo '{"confidence": 0.0}'
+            ;;
+    esac
+done
+```
+
+## Config file
+
+Save as `~/.config/sai/classifiers/my-classifier.json`:
+
+```json
+{
+  "name": "my-classifier",
+  "command": "/path/to/classifier.py",
+  "args": [],
+  "timeout_ms": 5000
+}
+```
+
+Load with:
+
+```bash
+sai classifier load ~/.config/sai/classifiers/my-classifier.json
+```
+
+## Tips
+
+- Flush stdout after each response
+- Handle malformed input gracefully (return 0.0)
+- Keep latency low (default timeout is 5 seconds)
+- Return 0.0 for unknown, not negative values
+- Scores are capped at 0.99 for unknown traffic (1.0 is reserved for bloom filter matches)

@@ -1,0 +1,152 @@
+//go:build darwin
+
+package sai
+
+import "strings"
+
+type DefaultClassifier struct{}
+
+func NewDefaultClassifier() *DefaultClassifier {
+	return &DefaultClassifier{}
+}
+
+func (d *DefaultClassifier) Name() string {
+	return "default"
+}
+
+func (d *DefaultClassifier) Classify(input ClassifierInput) (Confidence, error) {
+	var conf Confidence
+
+	if input.Stats == nil {
+		return conf - infrastructurePenalty(input.Domain), nil
+	}
+
+	stats := input.Stats
+
+	var byteRatio, packetRatio, avgPacketSize, packetsPerSec float64
+	if stats.TotalBytesOut > 0 {
+		byteRatio = float64(stats.TotalBytesIn) / float64(stats.TotalBytesOut)
+	}
+	if stats.TotalPacketsOut > 0 {
+		packetRatio = float64(stats.TotalPacketsIn) / float64(stats.TotalPacketsOut)
+	}
+	if stats.TotalPacketsIn > 0 {
+		avgPacketSize = float64(stats.TotalBytesIn) / float64(stats.TotalPacketsIn)
+	}
+	if stats.TotalDurationMs > 0 {
+		packetsPerSec = float64(stats.TotalPacketsIn) / (float64(stats.TotalDurationMs) / 1000)
+	}
+
+	if byteRatio > 5 {
+		conf += 0.10
+	}
+	if byteRatio > 20 {
+		conf += 0.05
+	}
+
+	if packetRatio > 5 {
+		conf += 0.10
+	}
+	if packetRatio > 20 {
+		conf += 0.05
+	}
+
+	if avgPacketSize > 0 && avgPacketSize < 500 {
+		conf += 0.10
+	}
+	if avgPacketSize > 0 && avgPacketSize < 200 {
+		conf += 0.05
+	}
+
+	if packetsPerSec > 2 {
+		conf += 0.10
+	}
+
+	if stats.TotalDurationMs > 5000 {
+		conf += 0.10
+	}
+
+	hasTLS := stats.Sources["tls"] > 0
+	hasStreaming := stats.Sources["streaming"] > 0
+	if hasTLS && hasStreaming {
+		conf += 0.15
+	} else if hasTLS {
+		conf += 0.05
+	} else if hasStreaming {
+		conf += 0.05
+	}
+
+	if stats.MaxConcurrent > 1 {
+		conf += 0.05
+	}
+
+	if stats.IsProgrammatic {
+		conf += 0.10
+	}
+
+	if stats.Count >= 3 {
+		conf += 0.05
+	}
+	if stats.Count >= 10 {
+		conf += 0.05
+	}
+
+	conf -= infrastructurePenalty(input.Domain)
+	if conf < 0 {
+		conf = 0
+	}
+
+	return conf, nil
+}
+
+func (d *DefaultClassifier) Close() error {
+	return nil
+}
+
+var infrastructurePenalties = map[string]Confidence{
+	"logs":           0.5,
+	"log":            0.5,
+	"logging":        0.5,
+	"telemetry":      0.5,
+	"metrics":        0.4,
+	"intake":         0.4,
+	"analytics":      0.4,
+	"tracking":       0.4,
+	"tracker":        0.4,
+	"statsig":        0.4,
+	"events":         0.3,
+	"cdn":            0.3,
+	"static":         0.3,
+	"assets":         0.3,
+	"media":          0.3,
+	"gateway":        0.3,
+	"cloudkit":       0.4,
+	"apple-cloudkit": 0.4,
+	"cloudfront":     0.4,
+	"cloudflare":     0.4,
+	"akamai":         0.4,
+	"fastly":         0.4,
+	"icloud":         0.4,
+	"stats":          0.3,
+	"status":         0.3,
+	"health":         0.3,
+	"auth":           0.2,
+	"oauth":          0.2,
+	"oauth2":         0.2,
+	"login":          0.2,
+	"sso":            0.2,
+	"ocsp":           0.5,
+	"ocsp2":          0.5,
+	"crl":            0.5,
+}
+
+func infrastructurePenalty(domain string) Confidence {
+	var totalPenalty Confidence
+	parts := strings.SplitSeq(domain, ".")
+	for part := range parts {
+		if penalty, ok := infrastructurePenalties[part]; ok {
+			totalPenalty += penalty
+		}
+	}
+	return totalPenalty
+}

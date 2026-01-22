@@ -27,7 +27,8 @@ sai events --since 1h   # query stored events
 sai agents              # list known agents
 sai ignore              # list/add/remove ignore rules
 sai triage              # classify unknown events
-sai sig                 # import/export signatures
+sai sig                 # import/export bloom filters
+sai classifier          # manage external classifiers
 sai doctor              # check system health
 sai setup               # setup BPF permissions
 ```

@@ -93,24 +93,23 @@ func (a *MyAccumulator) Confidence(process, domain string) sai.Confidence {
 // ... implement Count and Stats
 ```
 
-### Confidence levels
+### Confidence
 
-```go
-type Confidence int
+Confidence is a float64 from 0.0 to 1.0:
 
-const (
-    ConfidenceNone   // unknown
-    ConfidenceLow    // streaming behavior only
-    ConfidenceMedium // parent domain match
-    ConfidenceHigh   // direct bloom filter hit
-)
-```
+- `1.0` - known AI (in AI bloom filter)
+- `0.0` - known noise (in non-AI bloom filter)
+- `0.0-0.99` - computed by classifiers for unknown traffic
 
-Confidence increases with:
-- Direct domain match in AI bloom filter → high
-- Parent domain match (api.openai.com → openai.com) → medium
-- Streaming behavior detected → low (bumps up with repetition)
-- Multiple observations → increases confidence over time
+Traffic heuristics that increase confidence:
+- Byte asymmetry (large response vs small request)
+- Packet ratio (many response packets per request)
+- Small average packet size (token streaming)
+- Sustained packet rate
+- Long-lived connections
+- TLS + streaming source combination
+- Programmatic TLS client
+- Multiple observations
 
 ### Infrastructure penalties
 
@@ -125,15 +124,63 @@ Certain subdomains indicate non-LLM infrastructure and reduce confidence:
 
 Penalties stack when multiple infrastructure subdomains are present.
 
-## Classifier
+## FilterSet
 
-Check if a domain is a known AI provider:
+Named agents list + non-AI bloom filter.
 
 ```go
-c := sai.NewClassifier()
-if c.IsAI("api.openai.com") {
-    // known AI domain
+filterSet := sai.NewFilterSet()
+
+// Load existing
+if sai.FilterFileExists() {
+    filterSet.Load(sai.DefaultFilterPath())
 }
+
+// Check if traffic matches a known agent
+agentName := filterSet.MatchAgent(process, domain)
+if agentName != "" {
+    // Known AI agent, confidence = 1.0
+}
+
+// Check if traffic is known noise
+if filterSet.IsNonAIDomain(domain) {
+    // Known noise, confidence = 0.0
+}
+
+// Add agent
+filterSet.AddAgent("cursor", "cursor", []string{"*.anthropic.com"})
+filterSet.AddAgentDomain("cursor", "*.openai.com")
+
+// Add to non-AI filter
+filterSet.AddNonAIDomain("example.com")
+
+// Save
+filterSet.Save(sai.DefaultFilterPath())
+```
+
+## ClassifierRegistry
+
+Registry for external classifiers that score unknown traffic.
+
+```go
+registry := sai.NewClassifierRegistry()
+registry.Add(sai.NewDefaultClassifier()) // traffic heuristics
+
+// Add external classifier
+cfg := sai.ProcessClassifierConfig{
+    Name:    "ml-model",
+    Command: "/path/to/classifier",
+}
+external, _ := sai.NewProcessClassifier(cfg)
+registry.Add(external)
+
+// Classify unknown traffic
+input := sai.ClassifierInput{
+    Domain:  "api.example.com",
+    Process: "app",
+    Stats:   pairStats,
+}
+confidence := registry.Classify(input)
 ```
 
 ## Database
