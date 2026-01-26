@@ -37,10 +37,33 @@ var (
 
 func init() {
 	rootCmd.Flags().SortFlags = false
+
 	rootCmd.Flags().StringVarP(&monitorIface, "interface", "i", "en0", "network interface")
 	rootCmd.Flags().BoolVarP(&monitorJSON, "json", "j", false, "JSON lines output")
 	rootCmd.Flags().BoolVarP(&monitorAll, "all", "a", false, "show all events (bypass filters)")
 	rootCmd.Flags().BoolVar(&monitorEnablePID0, "enable-pid0", false, "include PID 0")
+
+	rootCmd.AddGroup(
+		&cobra.Group{ID: "daemon", Title: "Daemon:"},
+		&cobra.Group{ID: "query", Title: "Query:"},
+		&cobra.Group{ID: "config", Title: "Configuration:"},
+		&cobra.Group{ID: "system", Title: "System:"},
+	)
+
+	setupCmd.GroupID = "system"
+	doctorCmd.GroupID = "system"
+
+	startCmd.GroupID = "daemon"
+	stopCmd.GroupID = "daemon"
+	statusCmd.GroupID = "daemon"
+
+	eventsCmd.GroupID = "query"
+	triageCmd.GroupID = "query"
+
+	agentsCmd.GroupID = "config"
+	ignoreCmd.GroupID = "config"
+	sigCmd.GroupID = "config"
+	classifierCmd.GroupID = "config"
 
 	rootCmd.AddCommand(setupCmd)
 	rootCmd.AddCommand(doctorCmd)
