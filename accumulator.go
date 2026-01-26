@@ -1,5 +1,3 @@
-//go:build darwin
-
 package sai
 
 import (
@@ -34,26 +32,30 @@ type PairStats struct {
 }
 
 type MemoryAccumulator struct {
-	filterSet *FilterSet
-	registry  *ClassifierRegistry
-	pairs     map[string]*PairStats
-	mu        sync.RWMutex
+	signals  Signals
+	registry *ClassifierRegistry
+	pairs    map[string]*PairStats
+	mu       sync.RWMutex
 }
 
 func NewAccumulator() *MemoryAccumulator {
-	return NewAccumulatorWithFilters(NewFilterSet(), NewClassifierRegistry())
+	return NewAccumulatorWithSignals(NewFilterSet(), NewClassifierRegistry())
 }
 
-func NewAccumulatorWithFilters(filterSet *FilterSet, registry *ClassifierRegistry) *MemoryAccumulator {
+func NewAccumulatorWithSignals(signals Signals, registry *ClassifierRegistry) *MemoryAccumulator {
 	return &MemoryAccumulator{
-		filterSet: filterSet,
-		registry:  registry,
-		pairs:     make(map[string]*PairStats),
+		signals:  signals,
+		registry: registry,
+		pairs:    make(map[string]*PairStats),
 	}
 }
 
-func (a *MemoryAccumulator) FilterSet() *FilterSet {
-	return a.filterSet
+func NewAccumulatorWithFilters(filterSet *FilterSet, registry *ClassifierRegistry) *MemoryAccumulator {
+	return NewAccumulatorWithSignals(filterSet, registry)
+}
+
+func (a *MemoryAccumulator) Signals() Signals {
+	return a.signals
 }
 
 func (a *MemoryAccumulator) Registry() *ClassifierRegistry {
@@ -108,15 +110,15 @@ func (a *MemoryAccumulator) Record(event Event) {
 }
 
 func (a *MemoryAccumulator) classifyDomain(process, domain string) Confidence {
-	if a.filterSet == nil {
+	if a.signals == nil {
 		return 0.0
 	}
 
-	if a.filterSet.MatchAgent(process, domain) != "" {
+	if a.signals.MatchAgent(process, domain) != "" {
 		return 1.0
 	}
 
-	if a.filterSet.IsNonAI(process, domain) || a.filterSet.IsNonAIDomain(domain) {
+	if a.signals.IsNonAI(process, domain) || a.signals.IsNonAIDomain(domain) {
 		return 0.0
 	}
 
@@ -147,8 +149,8 @@ func (a *MemoryAccumulator) Confidence(process, domain string) Confidence {
 	if stats.BaseConfidence >= 1.0 {
 		return 1.0
 	}
-	if stats.BaseConfidence == 0.0 && a.filterSet != nil {
-		if a.filterSet.IsNonAI(process, domain) || a.filterSet.IsNonAIDomain(domain) {
+	if stats.BaseConfidence == 0.0 && a.signals != nil {
+		if a.signals.IsNonAI(process, domain) || a.signals.IsNonAIDomain(domain) {
 			return 0.0
 		}
 	}

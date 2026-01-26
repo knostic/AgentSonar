@@ -1,5 +1,3 @@
-//go:build darwin
-
 package sai
 
 import (
@@ -229,5 +227,49 @@ func TestAccumulatorFirstLastSeen(t *testing.T) {
 	}
 	if !stats.LastSeen.Equal(later) {
 		t.Errorf("LastSeen = %v, want %v", stats.LastSeen, later)
+	}
+}
+
+type mockSignals struct {
+	agents   map[string]string
+	nonAI    map[string]bool
+	nonAIDom map[string]bool
+}
+
+func (m *mockSignals) MatchAgent(process, domain string) string {
+	return m.agents[process+":"+domain]
+}
+
+func (m *mockSignals) IsNonAI(process, domain string) bool {
+	return m.nonAI[process+":"+domain]
+}
+
+func (m *mockSignals) IsNonAIDomain(domain string) bool {
+	return m.nonAIDom[domain]
+}
+
+func TestCustomSignalsImplementation(t *testing.T) {
+	signals := &mockSignals{
+		agents:   map[string]string{"claude-code:api.anthropic.com": "claude"},
+		nonAI:    map[string]bool{},
+		nonAIDom: map[string]bool{"google.com": true},
+	}
+
+	acc := NewAccumulatorWithSignals(signals, NewClassifierRegistry())
+
+	event := makeEvent("claude-code", "api.anthropic.com", "tls")
+	acc.Record(event)
+
+	conf := acc.Confidence("claude-code", "api.anthropic.com")
+	if conf != 1.0 {
+		t.Errorf("custom signals agent confidence = %v, want 1.0", conf)
+	}
+
+	event2 := makeEvent("chrome", "google.com", "tls")
+	acc.Record(event2)
+
+	conf2 := acc.Confidence("chrome", "google.com")
+	if conf2 != 0.0 {
+		t.Errorf("custom signals non-AI confidence = %v, want 0.0", conf2)
 	}
 }

@@ -8,7 +8,19 @@ Library for embedding sai's network monitoring into your own tools.
 go get github.com/knostic/sai
 ```
 
+## Platform Support
+
+| Component | darwin | linux/windows |
+|-----------|--------|---------------|
+| Monitor | Yes | Stub (returns error) |
+| Signals/FilterSet | Yes | Yes |
+| Accumulator | Yes | Yes |
+| Classifiers | Yes | Yes |
+| DB | Yes | No |
+
 ## Monitor
+
+Network monitoring requires darwin (macOS). On other platforms, `NewMonitor` returns a stub that errors on `Start()`.
 
 ```go
 import "github.com/knostic/sai"
@@ -16,7 +28,6 @@ import "github.com/knostic/sai"
 mon := sai.NewMonitor(sai.Config{
     Interface:  "en0",      // network interface
     EnablePID0: false,      // include kernel/system processes
-    AllDomains: false,      // monitor all domains, not just AI
 })
 
 if err := mon.Start(); err != nil {
@@ -73,7 +84,29 @@ for event := range mon.Events() {
 }
 ```
 
-### Custom implementation
+### With custom Signals
+
+```go
+signals := &MySignals{db: myDB}  // your Signals implementation
+registry := sai.NewClassifierRegistry()
+registry.Add(sai.NewDefaultClassifier())
+
+acc := sai.NewAccumulatorWithSignals(signals, registry)
+```
+
+### With FilterSet
+
+```go
+filterSet := sai.NewFilterSet()
+filterSet.Import(loadFromStorage())
+
+registry := sai.NewClassifierRegistry()
+registry.Add(sai.NewDefaultClassifier())
+
+acc := sai.NewAccumulatorWithFilters(filterSet, registry)
+```
+
+### Custom Accumulator implementation
 
 Implement the `Accumulator` interface to use your own persistence (Redis, Postgres, etc.):
 
@@ -124,14 +157,50 @@ Certain subdomains indicate non-LLM infrastructure and reduce confidence:
 
 Penalties stack when multiple infrastructure subdomains are present.
 
+## Signals
+
+Interface for known classifications (process:domain pairs). Implement this for custom storage backends.
+
+```go
+type Signals interface {
+    MatchAgent(process, domain string) string  // agent name or ""
+    IsNonAI(process, domain string) bool
+    IsNonAIDomain(domain string) bool
+}
+```
+
+### Custom implementation
+
+```go
+type MySignals struct {
+    db *sql.DB
+}
+
+func (s *MySignals) MatchAgent(process, domain string) string {
+    // query your database for known agents
+}
+
+func (s *MySignals) IsNonAI(process, domain string) bool {
+    // query your database
+}
+
+func (s *MySignals) IsNonAIDomain(domain string) bool {
+    // query your database
+}
+
+// Use it
+signals := &MySignals{db: myDB}
+acc := sai.NewAccumulatorWithSignals(signals, sai.NewClassifierRegistry())
+```
+
 ## FilterSet
 
-Named agents list + non-AI bloom filter.
+Reference implementation of `Signals`. Named agents list + non-AI bloom filter.
 
 ```go
 filterSet := sai.NewFilterSet()
 
-// Load existing
+// Load from file
 if sai.FilterFileExists() {
     filterSet.Load(sai.DefaultFilterPath())
 }
@@ -154,9 +223,27 @@ filterSet.AddAgentDomain("cursor", "*.openai.com")
 // Add to non-AI filter
 filterSet.AddNonAIDomain("example.com")
 
-// Save
+// Save to file
 filterSet.Save(sai.DefaultFilterPath())
 ```
+
+### Export/Import
+
+For custom storage backends, use `Export()` and `Import()` instead of file-based persistence:
+
+```go
+// Export to your storage
+data := filterSet.Export()
+saveToRedis(data)  // or database, S3, etc.
+
+// Import from your storage
+loaded := sai.NewFilterSet()
+loaded.Import(loadFromRedis())
+```
+
+`FilterSetData` contains:
+- `Agents` - list of `FilterAgent{Name, Process, Domains}`
+- `IgnoredDomains` - list of non-AI domain strings
 
 ## ClassifierRegistry
 
@@ -185,7 +272,7 @@ confidence := registry.Classify(input)
 
 ## Database
 
-Optional SQLite storage (CLI uses this, library users can ignore):
+Optional SQLite storage (darwin only, CLI uses this):
 
 ```go
 db, _ := sai.OpenDB(sai.DefaultDBPath())

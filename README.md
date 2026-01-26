@@ -35,14 +35,29 @@ sai setup               # setup BPF permissions
 
 ## Go API
 
-Library API available for embedding. See [docs/api.md](docs/api.md).
+Library API available for embedding. See [docs/api.md](docs/api.md) and [examples/](examples/).
 
 ```go
+// Monitor network traffic (darwin only)
 mon := sai.NewMonitor(sai.Config{Interface: "en0"})
 mon.Start()
 for event := range mon.Events() {
     fmt.Printf("%s -> %s\n", event.Process, event.Domain)
 }
+
+// Signals and classifiers work cross-platform
+signals := sai.NewFilterSet()
+signals.AddAgent("claude", "claude*", []string{"*.anthropic.com"})
+acc := sai.NewAccumulatorWithSignals(signals, sai.NewClassifierRegistry())
+```
+
+### Examples
+
+```bash
+go run ./examples/custom_signals   # custom Signals implementation
+go run ./examples/export_import    # FilterSet serialization
+go run ./examples/basic_monitor    # simple monitoring (darwin)
+go run ./examples/full_monitor     # full monitoring with accumulator (darwin)
 ```
 
 ## Commands

@@ -1,5 +1,3 @@
-//go:build darwin
-
 package sai
 
 import (
@@ -248,5 +246,56 @@ func TestNonAIProcessDomain(t *testing.T) {
 
 	if !fs.IsNonAI("safari", "APPLE.COM") {
 		t.Error("IsNonAI should be case insensitive")
+	}
+}
+
+func TestExportImportRoundTrip(t *testing.T) {
+	fs := NewFilterSet()
+	fs.AddAgent("claude", "claude*", []string{"*.anthropic.com"})
+	fs.AddAgent("openai", "python*", []string{"*.openai.com", "api.openai.com"})
+	fs.AddNonAIDomain("google.com")
+	fs.AddNonAIDomain("apple.com")
+
+	data := fs.Export()
+
+	if len(data.Agents) != 2 {
+		t.Errorf("exported agents = %d, want 2", len(data.Agents))
+	}
+	if len(data.IgnoredDomains) != 2 {
+		t.Errorf("exported ignored domains = %d, want 2", len(data.IgnoredDomains))
+	}
+
+	loaded := NewFilterSet()
+	loaded.Import(data)
+
+	if loaded.MatchAgent("claude-code", "api.anthropic.com") == "" {
+		t.Error("imported FilterSet should match claude agent")
+	}
+	if loaded.MatchAgent("python3", "api.openai.com") == "" {
+		t.Error("imported FilterSet should match openai agent")
+	}
+	if !loaded.IsNonAIDomain("google.com") {
+		t.Error("imported FilterSet should have google.com in non-AI")
+	}
+	if !loaded.IsNonAIDomain("api.apple.com") {
+		t.Error("imported FilterSet should block apple.com subdomains")
+	}
+}
+
+func TestExportImportIsolated(t *testing.T) {
+	fs := NewFilterSet()
+	fs.AddAgent("test", "test*", []string{"*.test.com"})
+	fs.AddNonAIDomain("example.com")
+
+	data := fs.Export()
+
+	data.Agents[0].Name = "modified"
+	data.IgnoredDomains[0] = "modified.com"
+
+	if fs.MatchAgent("test-app", "api.test.com") != "test" {
+		t.Error("modifying exported data should not affect original")
+	}
+	if !fs.IsNonAIDomain("example.com") {
+		t.Error("modifying exported data should not affect original ignored domains")
 	}
 }

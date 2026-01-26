@@ -1,5 +1,3 @@
-//go:build darwin
-
 package sai
 
 import (
@@ -38,18 +36,6 @@ func makeStatsInput(bytesIn, bytesOut int64, packetsIn, packetsOut int, duration
 		TotalDurationMs: durationMs,
 		Sources:         sources,
 	}
-}
-
-func withTempDB(t *testing.T, fn func(db *DB)) {
-	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "test.db")
-	db, err := OpenDB(path)
-	if err != nil {
-		t.Fatalf("failed to open test db: %v", err)
-	}
-	defer db.Close()
-	fn(db)
 }
 
 func withTempFilterSet(t *testing.T, fn func(fs *FilterSet, path string)) {

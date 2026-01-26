@@ -1,5 +1,3 @@
-//go:build darwin
-
 // TODO: load classifiers from github repo
 
 package sai

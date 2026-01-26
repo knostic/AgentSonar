@@ -1,5 +1,3 @@
-//go:build darwin
-
 package sai
 
 import (
@@ -346,4 +344,41 @@ func DefaultFilterPath() string {
 func FilterFileExists() bool {
 	_, err := os.Stat(DefaultFilterPath())
 	return err == nil
+}
+
+type FilterSetData struct {
+	Agents         []FilterAgent `json:"agents"`
+	IgnoredDomains []string      `json:"ignored_domains"`
+}
+
+func (f *FilterSet) Export() FilterSetData {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	agents := make([]FilterAgent, len(f.agents))
+	copy(agents, f.agents)
+
+	ignored := make([]string, len(f.ignoredDomains))
+	copy(ignored, f.ignoredDomains)
+
+	return FilterSetData{
+		Agents:         agents,
+		IgnoredDomains: ignored,
+	}
+}
+
+func (f *FilterSet) Import(data FilterSetData) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	f.agents = make([]FilterAgent, len(data.Agents))
+	copy(f.agents, data.Agents)
+
+	f.ignoredDomains = make([]string, len(data.IgnoredDomains))
+	copy(f.ignoredDomains, data.IgnoredDomains)
+
+	f.nonAIFilter = newBloomFilter(10000, 0.01)
+	for _, d := range f.ignoredDomains {
+		f.nonAIFilter.Add(d)
+	}
 }
