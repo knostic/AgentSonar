@@ -16,9 +16,11 @@ type Agent struct {
 }
 
 type Overrides struct {
-	agents  []Agent
-	noise   []string
-	mu      sync.RWMutex
+	agents   []Agent
+	noise    []string
+	mu       sync.RWMutex
+	path     string
+	modTime  int64
 }
 
 func NewOverrides() *Overrides {
@@ -91,6 +93,8 @@ func (o *Overrides) GetAgent(name string) *Agent {
 }
 
 func (o *Overrides) MatchAgent(process, domain string) string {
+	o.reloadIfChanged()
+
 	process = strings.ToLower(process)
 	domain = normalizeDomain(domain)
 
@@ -143,6 +147,8 @@ func (o *Overrides) ListNoise() []string {
 }
 
 func (o *Overrides) IsNoise(domain string) bool {
+	o.reloadIfChanged()
+
 	domain = normalizeDomain(domain)
 	o.mu.RLock()
 	defer o.mu.RUnlock()
@@ -194,6 +200,15 @@ func (o *Overrides) Load(path string) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
+	return o.loadLocked(path)
+}
+
+func (o *Overrides) loadLocked(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+
 	file, err := os.Open(path)
 	if err != nil {
 		return err
@@ -213,7 +228,27 @@ func (o *Overrides) Load(path string) error {
 
 	o.agents = data.Agents
 	o.noise = data.Noise
+	o.path = path
+	o.modTime = info.ModTime().UnixNano()
 	return nil
+}
+
+func (o *Overrides) reloadIfChanged() {
+	if o.path == "" {
+		return
+	}
+
+	info, err := os.Stat(o.path)
+	if err != nil {
+		return
+	}
+
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	if info.ModTime().UnixNano() != o.modTime {
+		o.loadLocked(o.path)
+	}
 }
 
 func (o *Overrides) Export() OverridesData {

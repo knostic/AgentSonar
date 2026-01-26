@@ -228,6 +228,41 @@ func TestEventPersistenceAndReplay(t *testing.T) {
 	})
 }
 
+func TestOverridesHotReload(t *testing.T) {
+	withTempOverrides(t, func(_ *Overrides, path string) {
+		initial := NewOverrides()
+		initial.AddNoise("google.com")
+		if err := initial.Save(path); err != nil {
+			t.Fatalf("initial save failed: %v", err)
+		}
+
+		daemon := NewOverrides()
+		if err := daemon.Load(path); err != nil {
+			t.Fatalf("daemon load failed: %v", err)
+		}
+
+		if !daemon.IsNoise("google.com") {
+			t.Fatal("daemon should see initial noise")
+		}
+		if daemon.IsNoise("facebook.com") {
+			t.Fatal("facebook.com should not be noise yet")
+		}
+
+		triage := NewOverrides()
+		if err := triage.Load(path); err != nil {
+			t.Fatalf("triage load failed: %v", err)
+		}
+		triage.AddNoise("facebook.com")
+		if err := triage.Save(path); err != nil {
+			t.Fatalf("triage save failed: %v", err)
+		}
+
+		if !daemon.IsNoise("facebook.com") {
+			t.Error("daemon should see noise added by triage without manual reload")
+		}
+	})
+}
+
 func TestDNSAndTLSCombined(t *testing.T) {
 	queryPkt := makeDNSQueryPacket("api.anthropic.com")
 	domain := capture.ParseDNSQuery(queryPkt)

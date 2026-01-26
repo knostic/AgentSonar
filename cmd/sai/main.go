@@ -19,6 +19,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var isTTY = func() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}()
+
 var rootCmd = &cobra.Command{
 	Use:   "sai",
 	Short: "Shadow AI Agent Detection",
@@ -370,13 +378,12 @@ func runMonitor(cmd *cobra.Command) {
 			if jsonOutput {
 				data, _ := json.Marshal(event)
 				fmt.Println(string(data))
-			} else if event.Agent != "" {
-				fmt.Printf("%s \033[33m[%s] %s -> %s\033[0m\n",
-					event.Timestamp.Format("15:04:05"), event.Agent, event.Process, event.Domain)
 			} else {
-				fmt.Printf("%s [unknown] %s:%-5d %-40s %-30s %-10s %-6s\n",
-					event.Timestamp.Format("15:04:05"), event.Process, event.PID, truncate(event.BinaryPath, 40),
-					event.Domain, event.Source, event.Confidence)
+				agent := event.Agent
+				if agent == "" {
+					agent = "unknown"
+				}
+				printEvent(event.Timestamp, agent, event.Process, event.PID, event.Domain, event.Source, event.Confidence)
 			}
 		}
 	}
@@ -446,9 +453,7 @@ func runEvents(cmd *cobra.Command) {
 			} else {
 				agent = "unknown"
 			}
-			fmt.Printf("%s [%s] %s:%-5d %-30s %-10s %-6s\n",
-				e.Timestamp.Format("15:04:05"), agent, e.Process, e.PID,
-				e.Domain, e.Source, conf)
+			printEvent(e.Timestamp, agent, e.Process, e.PID, e.Domain, e.Source, conf)
 		}
 	}
 }
@@ -914,11 +919,13 @@ func listUsableInterfaces() []string {
 	return result
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
+func printEvent(ts time.Time, agent, process string, pid int, domain, source string, conf sai.Confidence) {
+	const format = "%s  %-10s  %-15s  %6d  %-35s  %-10s  %s"
+	if isTTY && agent != "unknown" {
+		fmt.Printf("\033[33m"+format+"\033[0m\n", ts.Format("15:04:05"), agent, process, pid, domain, source, conf)
+	} else {
+		fmt.Printf(format+"\n", ts.Format("15:04:05"), agent, process, pid, domain, source, conf)
 	}
-	return "..." + s[len(s)-n+3:]
 }
 
 func baseDomain(domain string) string {

@@ -15,12 +15,14 @@ sai [flags]
 | `-i <iface>` | Network interface (default: en0) |
 | `--enable-pid0` | Include PID 0 / system processes |
 
-Output format:
+Output format (tab-separated):
 ```
-<process>:<pid> <binary_path> <domain> <source> <confidence> [<agent>]
+15:04:05	claude	claude-code	1234	api.anthropic.com	tls	0.85
 ```
 
-Confidence levels: `none`, `low`, `medium`, `high`
+Columns: timestamp, agent, process, pid, domain, source, confidence
+
+Known agents are highlighted in yellow when output is a TTY. Pipe-friendly (colors disabled when not a TTY).
 
 ## sai start
 
@@ -36,6 +38,8 @@ sai start [flags]
 | `-j` | JSON lines output |
 | `-i <iface>` | Network interface (default: en0) |
 | `--enable-pid0` | Include PID 0 / system processes |
+
+Logs: `~/.config/sai/sai.log`, PID: `~/.config/sai/sai.pid`
 
 ## sai stop
 
@@ -188,3 +192,7 @@ Clear the database. Only available in dev builds (`make dev`).
 ```bash
 sai nuke
 ```
+
+## Environment
+
+`SAI_CONFIG_DIR`, `SAI_OVERRIDES_PATH`, `SAI_DB_PATH` override default paths.
