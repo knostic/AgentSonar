@@ -1,4 +1,41 @@
-# Creating Classifiers
+# Classifiers
+
+## Default Classifier
+
+The built-in classifier scores traffic based on patterns typical of LLM API calls.
+
+**Signals** (each adds to score):
+
+| Signal | Threshold | Score |
+|--------|-----------|-------|
+| Byte asymmetry (in/out) | >5x | +0.10 |
+| Byte asymmetry (in/out) | >20x | +0.05 |
+| Packet asymmetry (in/out) | >5x | +0.10 |
+| Packet asymmetry (in/out) | >20x | +0.05 |
+| Small packets (token streaming) | <500 bytes avg | +0.10 |
+| Small packets (token streaming) | <200 bytes avg | +0.05 |
+| Sustained packet rate | >2/sec | +0.10 |
+| Long-lived connection | >5s | +0.10 |
+| TLS + streaming combined | | +0.15 |
+| TLS only | | +0.05 |
+| Streaming only | | +0.05 |
+| Concurrent connections | >1 | +0.05 |
+| Programmatic TLS client | | +0.10 |
+| Repeated observations | ≥3 | +0.05 |
+| Repeated observations | ≥10 | +0.05 |
+
+**Infrastructure penalties** (subtracted from score):
+
+Subdomains indicating non-LLM traffic reduce the score:
+
+- `-0.5`: `logs`, `log`, `logging`, `telemetry`, `ocsp`, `ocsp2`, `crl`
+- `-0.4`: `metrics`, `intake`, `analytics`, `tracking`, `statsig`, `cloudkit`, `cloudfront`, `cloudflare`, `akamai`, `fastly`, `icloud`
+- `-0.3`: `events`, `cdn`, `static`, `assets`, `media`, `gateway`, `stats`, `status`, `health`
+- `-0.2`: `auth`, `oauth`, `oauth2`, `login`, `sso`
+
+Penalties stack (e.g., `logs.metrics.example.com` gets -0.9).
+
+## External Classifiers
 
 External classifiers are long-running processes that score unknown traffic. They receive JSON on stdin and return AI scores on stdout.
 
