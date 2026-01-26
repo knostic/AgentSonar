@@ -1,7 +1,5 @@
-//go:build darwin
-
-// Basic network monitoring example (darwin only).
-// Prints all AI-related network events to stdout.
+// Basic network monitoring example.
+// Prints all network events to stdout.
 package main
 
 import (

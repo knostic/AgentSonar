@@ -130,10 +130,10 @@ func TestIgnoreCommand(t *testing.T) {
 
 		loaded := loadOverrides()
 
-		if !loaded.IsNonAIDomain("google.com") {
+		if !loaded.IsNoise("google.com") {
 			t.Error("google.com should be ignored")
 		}
-		if !loaded.IsNonAIDomain("api.google.com") {
+		if !loaded.IsNoise("api.google.com") {
 			t.Error("api.google.com should be ignored (subdomain)")
 		}
 	})
@@ -341,7 +341,7 @@ func TestSigExportImport(t *testing.T) {
 		if loaded.MatchAgent("python3", "api.openai.com") == "" {
 			t.Error("imported filters should match agent")
 		}
-		if !loaded.IsNonAIDomain("google.com") {
+		if !loaded.IsNoise("google.com") {
 			t.Error("imported filters should have non-AI domain")
 		}
 	})
@@ -440,10 +440,10 @@ func TestOverridesRoundTrip(t *testing.T) {
 		if loaded.MatchAgent("proc2-test", "api.dom2.com") != "agent2" {
 			t.Error("should match agent2")
 		}
-		if !loaded.IsNonAIDomain("ignored1.com") {
+		if !loaded.IsNoise("ignored1.com") {
 			t.Error("ignored1.com should be non-AI")
 		}
-		if !loaded.IsNonAIDomain("sub.ignored2.com") {
+		if !loaded.IsNoise("sub.ignored2.com") {
 			t.Error("sub.ignored2.com should be non-AI")
 		}
 	})

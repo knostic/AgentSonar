@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -62,10 +63,8 @@ func (o *Overrides) AddAgentDomain(name, domain string) {
 
 	for i, a := range o.agents {
 		if a.Name == name {
-			for _, d := range a.Domains {
-				if d == domain {
-					return
-				}
+			if slices.Contains(a.Domains, domain) {
+				return
 			}
 			o.agents[i].Domains = append(o.agents[i].Domains, domain)
 			return
@@ -133,10 +132,8 @@ func (o *Overrides) AddNoise(domain string) {
 	domain = normalizeDomain(domain)
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	for _, d := range o.noise {
-		if d == domain {
-			return
-		}
+	if slices.Contains(o.noise, domain) {
+		return
 	}
 	o.noise = append(o.noise, domain)
 }

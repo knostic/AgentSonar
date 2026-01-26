@@ -1,6 +1,4 @@
-//go:build darwin
-
-// Full monitoring example with accumulator. Darwin only.
+// Full monitoring example with accumulator.
 // Tracks events, computes confidence, and identifies AI agents.
 package main
 
