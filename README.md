@@ -38,7 +38,6 @@ sai setup               # setup BPF permissions
 Library API available for embedding. See [docs/api.md](docs/api.md) and [examples/](examples/).
 
 ```go
-// Monitor network traffic (darwin only)
 mon := sai.NewMonitor(sai.Config{Interface: "en0"})
 mon.Start()
 for event := range mon.Events() {
