@@ -232,16 +232,11 @@ func TestAccumulatorFirstLastSeen(t *testing.T) {
 
 type mockSignals struct {
 	agents   map[string]string
-	nonAI    map[string]bool
 	nonAIDom map[string]bool
 }
 
 func (m *mockSignals) MatchAgent(process, domain string) string {
 	return m.agents[process+":"+domain]
-}
-
-func (m *mockSignals) IsNonAI(process, domain string) bool {
-	return m.nonAI[process+":"+domain]
 }
 
 func (m *mockSignals) IsNonAIDomain(domain string) bool {
@@ -251,7 +246,6 @@ func (m *mockSignals) IsNonAIDomain(domain string) bool {
 func TestCustomSignalsImplementation(t *testing.T) {
 	signals := &mockSignals{
 		agents:   map[string]string{"claude-code:api.anthropic.com": "claude"},
-		nonAI:    map[string]bool{},
 		nonAIDom: map[string]bool{"google.com": true},
 	}
 

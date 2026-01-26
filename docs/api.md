@@ -164,7 +164,6 @@ Interface for known classifications. Implement this for custom storage backends.
 ```go
 type Signals interface {
     MatchAgent(process, domain string) string  // agent name or ""
-    IsNonAI(process, domain string) bool
     IsNonAIDomain(domain string) bool
 }
 ```
@@ -178,10 +177,6 @@ type MySignals struct {
 
 func (s *MySignals) MatchAgent(process, domain string) string {
     // query your database for known agents
-}
-
-func (s *MySignals) IsNonAI(process, domain string) bool {
-    return s.IsNonAIDomain(domain)
 }
 
 func (s *MySignals) IsNonAIDomain(domain string) bool {

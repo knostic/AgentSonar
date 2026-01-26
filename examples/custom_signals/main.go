@@ -51,10 +51,6 @@ func (s *MapSignals) MatchAgent(process, domain string) string {
 	return ""
 }
 
-func (s *MapSignals) IsNonAI(process, domain string) bool {
-	return s.IsNonAIDomain(domain)
-}
-
 func (s *MapSignals) IsNonAIDomain(domain string) bool {
 	domain = strings.ToLower(domain)
 	if s.nonAIDomains[domain] {

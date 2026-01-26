@@ -118,7 +118,7 @@ func (a *MemoryAccumulator) classifyDomain(process, domain string) Confidence {
 		return 1.0
 	}
 
-	if a.signals.IsNonAI(process, domain) || a.signals.IsNonAIDomain(domain) {
+	if a.signals.IsNonAIDomain(domain) {
 		return 0.0
 	}
 
@@ -150,7 +150,7 @@ func (a *MemoryAccumulator) Confidence(process, domain string) Confidence {
 		return 1.0
 	}
 	if stats.BaseConfidence == 0.0 && a.signals != nil {
-		if a.signals.IsNonAI(process, domain) || a.signals.IsNonAIDomain(domain) {
+		if a.signals.IsNonAIDomain(domain) {
 			return 0.0
 		}
 	}

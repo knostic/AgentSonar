@@ -7,9 +7,6 @@ type Signals interface {
 	// Returns empty string if no match.
 	MatchAgent(process, domain string) string
 
-	// IsNonAI returns true if (process, domain) is known non-AI traffic.
-	IsNonAI(process, domain string) bool
-
 	// IsNonAIDomain returns true if domain is known non-AI (ignores process).
 	IsNonAIDomain(domain string) bool
 }

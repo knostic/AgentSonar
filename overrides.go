@@ -156,10 +156,6 @@ func (o *Overrides) IsNoise(domain string) bool {
 }
 
 // Signals interface implementation
-func (o *Overrides) IsNonAI(process, domain string) bool {
-	return o.IsNoise(domain)
-}
-
 func (o *Overrides) IsNonAIDomain(domain string) bool {
 	return o.IsNoise(domain)
 }
