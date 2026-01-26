@@ -1,5 +1,5 @@
 // Full monitoring example with accumulator.
-// Tracks events, computes confidence, and identifies AI agents.
+// Tracks events, computes AI scores, and identifies AI agents.
 package main
 
 import (
@@ -43,9 +43,9 @@ func main() {
 			acc.Record(event)
 
 			event.Agent = fs.MatchAgent(event.Process, event.Domain)
-			event.Confidence = acc.Confidence(event.Process, event.Domain)
+			event.AIScore = acc.AIScore(event.Process, event.Domain)
 
-			if event.Agent != "" || event.Confidence > 0.3 {
+			if event.Agent != "" || event.AIScore > 0.3 {
 				out, _ := json.Marshal(event)
 				fmt.Println(string(out))
 			}

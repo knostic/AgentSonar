@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Simple domain-based classifier for sai.
-Reads JSON lines from stdin, writes confidence scores to stdout.
+Reads JSON lines from stdin, writes ai_score scores to stdout.
 """
 
 import json
@@ -29,10 +29,10 @@ def main():
         try:
             data = json.loads(line)
             domain = data.get("domain", "")
-            confidence = score_domain(domain)
-            print(json.dumps({"confidence": confidence}), flush=True)
+            ai_score = score_domain(domain)
+            print(json.dumps({"ai_score": ai_score}), flush=True)
         except json.JSONDecodeError:
-            print(json.dumps({"confidence": 0}), flush=True)
+            print(json.dumps({"ai_score": 0}), flush=True)
 
 if __name__ == "__main__":
     main()

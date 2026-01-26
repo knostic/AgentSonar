@@ -1,6 +1,6 @@
 # Creating Classifiers
 
-External classifiers are long-running processes that score unknown traffic. They receive JSON on stdin and return confidence scores on stdout.
+External classifiers are long-running processes that score unknown traffic. They receive JSON on stdin and return AI scores on stdout.
 
 ## Protocol
 
@@ -55,12 +55,12 @@ One JSON object per line:
 One JSON object per line:
 
 ```json
-{"confidence": 0.85}
+{"ai_score": 0.85}
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `confidence` | float64 | Score from 0.0 (not AI) to 1.0 (definitely AI) |
+| `ai_score` | float64 | Score from 0.0 (not AI) to 1.0 (definitely AI) |
 
 ## Example: Python classifier
 
@@ -85,32 +85,32 @@ def classify(data):
     if not stats:
         return 0.0
 
-    confidence = 0.0
+    score = 0.0
 
     # High byte ratio (large response vs small request)
     if stats["bytes_out"] > 0:
         ratio = stats["bytes_in"] / stats["bytes_out"]
         if ratio > 10:
-            confidence += 0.3
+            score += 0.3
 
     # Streaming detection
     if stats["sources"].get("streaming", 0) > 0:
-        confidence += 0.2
+        score += 0.2
 
     # Long-lived connection
     if stats["duration_ms"] > 5000:
-        confidence += 0.1
+        score += 0.1
 
-    return min(confidence, 0.99)
+    return min(score, 0.99)
 
 if __name__ == "__main__":
     for line in sys.stdin:
         try:
             data = json.loads(line)
             score = classify(data)
-            print(json.dumps({"confidence": score}), flush=True)
+            print(json.dumps({"ai_score": score}), flush=True)
         except:
-            print(json.dumps({"confidence": 0.0}), flush=True)
+            print(json.dumps({"ai_score": 0.0}), flush=True)
 ```
 
 ## Example: Shell classifier
@@ -124,10 +124,10 @@ while IFS= read -r line; do
 
     case "$domain" in
         *openai.com|*anthropic.com|*cohere.ai)
-            echo '{"confidence": 0.9}'
+            echo '{"ai_score": 0.9}'
             ;;
         *)
-            echo '{"confidence": 0.0}'
+            echo '{"ai_score": 0.0}'
             ;;
     esac
 done

@@ -35,7 +35,7 @@ func TestPacketRatioScoring(t *testing.T) {
 		name        string
 		packetsIn   int
 		packetsOut  int
-		wantMinConf Confidence
+		wantMinConf AIScore
 	}{
 		{
 			name:        "ratio_below_5",
@@ -79,7 +79,7 @@ func TestSmallPacketScoring(t *testing.T) {
 		name        string
 		bytesIn     int64
 		packetsIn   int
-		wantMinConf Confidence
+		wantMinConf AIScore
 		description string
 	}{
 		{
@@ -185,7 +185,7 @@ func TestCountThresholds(t *testing.T) {
 	tests := []struct {
 		name        string
 		count       int
-		wantMinConf Confidence
+		wantMinConf AIScore
 	}{
 		{"count_1", 1, 0.0},
 		{"count_3", 3, 0.05},
@@ -246,18 +246,19 @@ func TestNilStatsOnlyAppliesPenalty(t *testing.T) {
 	}
 }
 
-func TestRegistryReturnsMaxConfidence(t *testing.T) {
+func TestRegistryReturnsAverageAIScore(t *testing.T) {
 	registry := NewClassifierRegistry()
 
 	registry.Add(&mockClassifier{name: "low", conf: 0.3})
-	registry.Add(&mockClassifier{name: "high", conf: 0.8})
-	registry.Add(&mockClassifier{name: "mid", conf: 0.5})
+	registry.Add(&mockClassifier{name: "high", conf: 0.9})
+	registry.Add(&mockClassifier{name: "mid", conf: 0.6})
 
 	input := ClassifierInput{Domain: "example.com"}
-	conf := registry.Classify(input)
+	score := registry.Classify(input)
 
-	if conf != 0.8 {
-		t.Errorf("registry should return max confidence 0.8, got %v", conf)
+	expected := AIScore(0.6) // (0.3 + 0.9 + 0.6) / 3 = 0.6
+	if score != expected {
+		t.Errorf("registry should return average 0.6, got %v", score)
 	}
 }
 
@@ -274,9 +275,9 @@ func TestEmptyRegistryReturnsZero(t *testing.T) {
 
 type mockClassifier struct {
 	name string
-	conf Confidence
+	conf AIScore
 }
 
 func (m *mockClassifier) Name() string                                   { return m.name }
-func (m *mockClassifier) Classify(input ClassifierInput) (Confidence, error) { return m.conf, nil }
+func (m *mockClassifier) Classify(input ClassifierInput) (AIScore, error) { return m.conf, nil }
 func (m *mockClassifier) Close() error                                   { return nil }

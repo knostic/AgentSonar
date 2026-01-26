@@ -98,7 +98,7 @@ func main() {
 	for _, event := range events {
 		acc.Record(event)
 		agent := signals.MatchAgent(event.Process, event.Domain)
-		conf := acc.Confidence(event.Process, event.Domain)
+		score := acc.AIScore(event.Process, event.Domain)
 
 		status := "unknown"
 		if agent != "" {
@@ -107,7 +107,7 @@ func main() {
 			status = "non-AI"
 		}
 
-		fmt.Printf("%s -> %s [%s] conf=%.2f\n",
-			event.Process, event.Domain, status, conf)
+		fmt.Printf("%s -> %s [%s] score=%.2f\n",
+			event.Process, event.Domain, status, score)
 	}
 }

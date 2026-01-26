@@ -85,7 +85,7 @@ func TestKnownAgentReturnsOne(t *testing.T) {
 	event := makeEvent("claude-code", "api.anthropic.com", "tls")
 	acc.Record(event)
 
-	conf := acc.Confidence("claude-code", "api.anthropic.com")
+	conf := acc.AIScore("claude-code", "api.anthropic.com")
 	if conf != 1.0 {
 		t.Errorf("known agent confidence = %v, want 1.0", conf)
 	}
@@ -100,7 +100,7 @@ func TestNonAIReturnsZero(t *testing.T) {
 	event := makeEvent("chrome", "google.com", "tls")
 	acc.Record(event)
 
-	conf := acc.Confidence("chrome", "google.com")
+	conf := acc.AIScore("chrome", "google.com")
 	if conf != 0.0 {
 		t.Errorf("non-AI confidence = %v, want 0.0", conf)
 	}
@@ -122,13 +122,13 @@ func TestHeuristicScoreFromRegistry(t *testing.T) {
 	})
 	acc.Record(event)
 
-	conf := acc.Confidence("unknown", "api.example.com")
+	conf := acc.AIScore("unknown", "api.example.com")
 	if conf <= 0 {
 		t.Errorf("heuristic confidence should be > 0, got %v", conf)
 	}
 }
 
-func TestConfidenceCappedAt099(t *testing.T) {
+func TestAIScoreCappedAt099(t *testing.T) {
 	fs := NewOverrides()
 	registry := NewClassifierRegistry()
 	registry.Add(&mockClassifier{name: "high", conf: 1.5})
@@ -138,7 +138,7 @@ func TestConfidenceCappedAt099(t *testing.T) {
 	event := makeEvent("test", "example.com", "tls")
 	acc.Record(event)
 
-	conf := acc.Confidence("test", "example.com")
+	conf := acc.AIScore("test", "example.com")
 	if conf > 0.99 {
 		t.Errorf("heuristic confidence should be capped at 0.99, got %v", conf)
 	}
@@ -254,7 +254,7 @@ func TestCustomSignalsImplementation(t *testing.T) {
 	event := makeEvent("claude-code", "api.anthropic.com", "tls")
 	acc.Record(event)
 
-	conf := acc.Confidence("claude-code", "api.anthropic.com")
+	conf := acc.AIScore("claude-code", "api.anthropic.com")
 	if conf != 1.0 {
 		t.Errorf("custom signals agent confidence = %v, want 1.0", conf)
 	}
@@ -262,7 +262,7 @@ func TestCustomSignalsImplementation(t *testing.T) {
 	event2 := makeEvent("chrome", "google.com", "tls")
 	acc.Record(event2)
 
-	conf2 := acc.Confidence("chrome", "google.com")
+	conf2 := acc.AIScore("chrome", "google.com")
 	if conf2 != 0.0 {
 		t.Errorf("custom signals non-AI confidence = %v, want 0.0", conf2)
 	}

@@ -20,7 +20,7 @@ Output format (tab-separated):
 15:04:05	claude	claude-code	1234	api.anthropic.com	tls	0.85
 ```
 
-Columns: timestamp, agent, process, pid, domain, source, confidence
+Columns: timestamp, agent, process, pid, domain, source, ai_score
 
 Known agents are highlighted in yellow when output is a TTY. Pipe-friendly (colors disabled when not a TTY).
 
@@ -143,7 +143,7 @@ sai classifier load <config>    # load external classifier
 sai classifier unload <name>    # unload classifier
 ```
 
-External classifiers are long-running processes that receive JSON on stdin and return confidence scores on stdout.
+External classifiers are long-running processes that receive JSON on stdin and return AI scores on stdout.
 
 Config format:
 ```json
@@ -158,7 +158,7 @@ Config format:
 Protocol:
 ```
 stdin:  {"domain":"api.example.com","process":"app","source":"tls","stats":{...}}
-stdout: {"confidence":0.85}
+stdout: {"ai_score":0.85}
 ```
 
 ## sai doctor

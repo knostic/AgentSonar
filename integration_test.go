@@ -38,7 +38,7 @@ func TestKnownAgentFullFlow(t *testing.T) {
 		t.Errorf("agent = %q, want %q", agent, "claude")
 	}
 
-	conf := acc.Confidence(event.Process, event.Domain)
+	conf := acc.AIScore(event.Process, event.Domain)
 	if conf != 1.0 {
 		t.Errorf("confidence = %v, want 1.0", conf)
 	}
@@ -72,7 +72,7 @@ func TestNonAIFilterFullFlow(t *testing.T) {
 		t.Error("domain should be marked as non-AI")
 	}
 
-	conf := acc.Confidence(event.Process, event.Domain)
+	conf := acc.AIScore(event.Process, event.Domain)
 	if conf != 0.0 {
 		t.Errorf("confidence = %v, want 0.0 for non-AI domain", conf)
 	}
@@ -112,7 +112,7 @@ func TestUnknownWithAITrafficPattern(t *testing.T) {
 	}
 	acc.Record(event2)
 
-	conf := acc.Confidence("suspicious-agent", "api.unknown-ai.com")
+	conf := acc.AIScore("suspicious-agent", "api.unknown-ai.com")
 	if conf < 0.3 {
 		t.Errorf("AI traffic pattern should have confidence >= 0.3, got %v", conf)
 	}
@@ -221,7 +221,7 @@ func TestEventPersistenceAndReplay(t *testing.T) {
 			t.Error("should be marked as programmatic")
 		}
 
-		conf := acc.Confidence("python3", "api.openai.com")
+		conf := acc.AIScore("python3", "api.openai.com")
 		if conf != 1.0 {
 			t.Errorf("known agent confidence = %v, want 1.0", conf)
 		}

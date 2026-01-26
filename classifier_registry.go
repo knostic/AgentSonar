@@ -22,12 +22,12 @@ type ClassifierInput struct {
 }
 
 type ClassifierOutput struct {
-	Confidence Confidence `json:"confidence"`
+	AIScore AIScore `json:"ai_score"`
 }
 
 type Classifier interface {
 	Name() string
-	Classify(input ClassifierInput) (Confidence, error)
+	Classify(input ClassifierInput) (AIScore, error)
 	Close() error
 }
 
@@ -58,18 +58,41 @@ func (r *ClassifierRegistry) Remove(name string) {
 	}
 }
 
-func (r *ClassifierRegistry) Classify(input ClassifierInput) Confidence {
+func (r *ClassifierRegistry) Classify(input ClassifierInput) AIScore {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	var total Confidence
+	if len(r.classifiers) == 0 {
+		return 0
+	}
+
+	var total AIScore
+	var count int
 	for _, c := range r.classifiers {
-		conf, err := c.Classify(input)
-		if err == nil && conf > total {
-			total = conf
+		score, err := c.Classify(input)
+		if err == nil {
+			total += score
+			count++
 		}
 	}
-	return total
+	if count == 0 {
+		return 0
+	}
+	return total / AIScore(count)
+}
+
+func (r *ClassifierRegistry) ClassifyAll(input ClassifierInput) map[string]AIScore {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	scores := make(map[string]AIScore, len(r.classifiers))
+	for _, c := range r.classifiers {
+		score, err := c.Classify(input)
+		if err == nil {
+			scores[c.Name()] = score
+		}
+	}
+	return scores
 }
 
 func (r *ClassifierRegistry) List() []string {
@@ -144,7 +167,7 @@ func (p *ProcessClassifier) Name() string {
 	return p.name
 }
 
-func (p *ProcessClassifier) Classify(input ClassifierInput) (Confidence, error) {
+func (p *ProcessClassifier) Classify(input ClassifierInput) (AIScore, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -181,7 +204,7 @@ func (p *ProcessClassifier) Classify(input ClassifierInput) (Confidence, error) 
 		if scanErr != nil {
 			return 0, scanErr
 		}
-		return output.Confidence, nil
+		return output.AIScore, nil
 	}
 }
 

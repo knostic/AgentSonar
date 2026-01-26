@@ -39,7 +39,7 @@ func main() {
 
 	for _, event := range events {
 		acc.Record(event)
-		conf := acc.Confidence(event.Process, event.Domain)
-		fmt.Printf("%s -> %s  confidence=%.2f\n", event.Process, event.Domain, conf)
+		score := acc.AIScore(event.Process, event.Domain)
+		fmt.Printf("%s -> %s  score=%.2f\n", event.Process, event.Domain, score)
 	}
 }

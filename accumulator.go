@@ -9,7 +9,7 @@ import (
 
 type Accumulator interface {
 	Record(event Event)
-	Confidence(process, domain string) Confidence
+	AIScore(process, domain string) AIScore
 	Count(process, domain string) int
 	Stats(process, domain string) *PairStats
 }
@@ -27,8 +27,8 @@ type PairStats struct {
 	TotalPacketsIn  int            `json:"packets_in"`
 	TotalPacketsOut int            `json:"packets_out"`
 	TotalDurationMs int64          `json:"duration_ms"`
-	MaxConcurrent   int            `json:"max_concurrent"`
-	BaseConfidence  Confidence     `json:"-"`
+	MaxConcurrent int     `json:"max_concurrent"`
+	BaseAIScore   AIScore `json:"-"`
 }
 
 type MemoryAccumulator struct {
@@ -76,7 +76,7 @@ func (a *MemoryAccumulator) Record(event Event) {
 			FirstSeen: event.Timestamp,
 			Sources:   make(map[string]int),
 		}
-		stats.BaseConfidence = a.classifyDomain(event.Process, event.Domain)
+		stats.BaseAIScore = a.classifyDomain(event.Process, event.Domain)
 		a.pairs[key] = stats
 	}
 
@@ -109,7 +109,7 @@ func (a *MemoryAccumulator) Record(event Event) {
 	}
 }
 
-func (a *MemoryAccumulator) classifyDomain(process, domain string) Confidence {
+func (a *MemoryAccumulator) classifyDomain(process, domain string) AIScore {
 	if a.signals == nil {
 		return 0.0
 	}
@@ -125,7 +125,7 @@ func (a *MemoryAccumulator) classifyDomain(process, domain string) Confidence {
 	return 0.0
 }
 
-func (a *MemoryAccumulator) Confidence(process, domain string) Confidence {
+func (a *MemoryAccumulator) AIScore(process, domain string) AIScore {
 	key := process + ":" + normalizeDomain(domain)
 
 	a.mu.RLock()
@@ -146,16 +146,16 @@ func (a *MemoryAccumulator) Confidence(process, domain string) Confidence {
 		return 0
 	}
 
-	if stats.BaseConfidence >= 1.0 {
+	if stats.BaseAIScore >= 1.0 {
 		return 1.0
 	}
-	if stats.BaseConfidence == 0.0 && a.signals != nil {
+	if stats.BaseAIScore == 0.0 && a.signals != nil {
 		if a.signals.IsNonAIDomain(domain) {
 			return 0.0
 		}
 	}
 
-	conf := stats.BaseConfidence
+	score := stats.BaseAIScore
 	if a.registry != nil {
 		input := ClassifierInput{
 			Domain:  domain,
@@ -163,16 +163,16 @@ func (a *MemoryAccumulator) Confidence(process, domain string) Confidence {
 			Stats:   stats,
 		}
 		heuristic := a.registry.Classify(input)
-		if heuristic > conf {
-			conf = heuristic
+		if heuristic > score {
+			score = heuristic
 		}
 	}
 
-	if conf > 0.99 {
-		conf = 0.99
+	if score > 0.99 {
+		score = 0.99
 	}
 
-	return conf
+	return score
 }
 
 func (a *MemoryAccumulator) Count(process, domain string) int {

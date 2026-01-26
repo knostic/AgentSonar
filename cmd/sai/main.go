@@ -358,9 +358,9 @@ func runMonitor(cmd *cobra.Command) {
 			event.Agent = filterSet.MatchAgent(event.Process, event.Domain)
 
 			acc.Record(event)
-			event.Confidence = acc.Confidence(event.Process, event.Domain)
+			event.AIScore = acc.AIScore(event.Process, event.Domain)
 			if event.Agent != "" {
-				event.Confidence = 1.0
+				event.AIScore = 1.0
 			}
 
 			if db != nil {
@@ -379,7 +379,7 @@ func runMonitor(cmd *cobra.Command) {
 				if agent == "" {
 					agent = "unknown"
 				}
-				printEvent(event.Timestamp, agent, event.Process, event.PID, event.Domain, event.Source, event.Confidence)
+				printEvent(event.Timestamp, agent, event.Process, event.PID, event.Domain, event.Source, event.AIScore)
 			}
 		}
 	}
@@ -431,9 +431,9 @@ func runEvents(cmd *cobra.Command) {
 				continue
 			}
 			e.Agent = filterSet.MatchAgent(e.Process, e.Domain)
-			e.Confidence = acc.Confidence(e.Process, e.Domain)
+			e.AIScore = acc.AIScore(e.Process, e.Domain)
 			if e.Agent != "" {
-				e.Confidence = 1.0
+				e.AIScore = 1.0
 			}
 			enc.Encode(e)
 		}
@@ -443,7 +443,7 @@ func runEvents(cmd *cobra.Command) {
 				continue
 			}
 			agent := filterSet.MatchAgent(e.Process, e.Domain)
-			conf := acc.Confidence(e.Process, e.Domain)
+			conf := acc.AIScore(e.Process, e.Domain)
 			if agent != "" {
 				conf = 1.0
 			} else {
@@ -563,8 +563,8 @@ func runTriage() {
 	}
 
 	sort.Slice(events, func(i, j int) bool {
-		ci := acc.Confidence(events[i].Process, events[i].Domain)
-		cj := acc.Confidence(events[j].Process, events[j].Domain)
+		ci := acc.AIScore(events[i].Process, events[i].Domain)
+		cj := acc.AIScore(events[j].Process, events[j].Domain)
 		return ci > cj
 	})
 
@@ -583,10 +583,27 @@ func runTriage() {
 			continue
 		}
 
-		conf := acc.Confidence(e.Process, e.Domain)
-		fmt.Printf("\n%s -> %s AI confidence: %s\n", e.Process, e.Domain, conf)
+		score := acc.AIScore(e.Process, e.Domain)
+		fmt.Printf("\n%s -> %s  AI score: %s\n", e.Process, e.Domain, score)
 		fmt.Printf("  binary: %s\n", e.BinaryPath)
 		fmt.Printf("  source: %s, ja4: %s\n", e.Source, e.JA4)
+		scores := registry.ClassifyAll(sai.ClassifierInput{
+			Domain:  e.Domain,
+			Process: e.Process,
+			Stats:   acc.Stats(e.Process, e.Domain),
+		})
+		if len(scores) > 0 {
+			fmt.Print("  classifiers: ")
+			first := true
+			for name, s := range scores {
+				if !first {
+					fmt.Print(", ")
+				}
+				fmt.Printf("%s=%s", name, s)
+				first = false
+			}
+			fmt.Println()
+		}
 		fmt.Print("\n[a]gent (A to edit), [n]oise, [s]kip, [q]uit? ")
 
 		input, _ := reader.ReadString('\n')
@@ -941,12 +958,12 @@ func listUsableInterfaces() []string {
 	return result
 }
 
-func printEvent(ts time.Time, agent, process string, pid int, domain, source string, conf sai.Confidence) {
+func printEvent(ts time.Time, agent, process string, pid int, domain, source string, score sai.AIScore) {
 	const format = "%s  %-10s  %-15s  %6d  %-35s  %-10s  %s"
 	if isTTY && agent != "unknown" {
-		fmt.Printf("\033[33m"+format+"\033[0m\n", ts.Format("15:04:05"), agent, process, pid, domain, source, conf)
+		fmt.Printf("\033[33m"+format+"\033[0m\n", ts.Format("15:04:05"), agent, process, pid, domain, source, score)
 	} else {
-		fmt.Printf(format+"\n", ts.Format("15:04:05"), agent, process, pid, domain, source, conf)
+		fmt.Printf(format+"\n", ts.Format("15:04:05"), agent, process, pid, domain, source, score)
 	}
 }
 

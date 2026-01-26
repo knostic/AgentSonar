@@ -5,10 +5,10 @@ import (
 	"time"
 )
 
-type Confidence float64
+type AIScore float64
 
-func (c Confidence) String() string {
-	return fmt.Sprintf("%.2f", c)
+func (s AIScore) String() string {
+	return fmt.Sprintf("%.2f", s)
 }
 
 // Config configures the monitor
@@ -26,8 +26,8 @@ type Event struct {
 	Domain     string            `json:"domain"`
 	Source     string            `json:"source"` // tls, dns, streaming
 	JA4        string            `json:"ja4,omitempty"`
-	Agent      string            `json:"agent,omitempty"` // matched agent name
-	Confidence Confidence        `json:"confidence,omitempty"`
+	Agent   string            `json:"agent,omitempty"` // matched agent name
+	AIScore AIScore           `json:"ai_score,omitempty"`
 	Extras     map[string]string `json:"extras,omitempty"`
 }
 

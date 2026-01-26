@@ -12,11 +12,11 @@ func (d *DefaultClassifier) Name() string {
 	return "default"
 }
 
-func (d *DefaultClassifier) Classify(input ClassifierInput) (Confidence, error) {
-	var conf Confidence
+func (d *DefaultClassifier) Classify(input ClassifierInput) (AIScore, error) {
+	var score AIScore
 
 	if input.Stats == nil {
-		return conf - infrastructurePenalty(input.Domain), nil
+		return score - infrastructurePenalty(input.Domain), nil
 	}
 
 	stats := input.Stats
@@ -36,72 +36,72 @@ func (d *DefaultClassifier) Classify(input ClassifierInput) (Confidence, error) 
 	}
 
 	if byteRatio > 5 {
-		conf += 0.10
+		score += 0.10
 	}
 	if byteRatio > 20 {
-		conf += 0.05
+		score += 0.05
 	}
 
 	if packetRatio > 5 {
-		conf += 0.10
+		score += 0.10
 	}
 	if packetRatio > 20 {
-		conf += 0.05
+		score += 0.05
 	}
 
 	if avgPacketSize > 0 && avgPacketSize < 500 {
-		conf += 0.10
+		score += 0.10
 	}
 	if avgPacketSize > 0 && avgPacketSize < 200 {
-		conf += 0.05
+		score += 0.05
 	}
 
 	if packetsPerSec > 2 {
-		conf += 0.10
+		score += 0.10
 	}
 
 	if stats.TotalDurationMs > 5000 {
-		conf += 0.10
+		score += 0.10
 	}
 
 	hasTLS := stats.Sources["tls"] > 0
 	hasStreaming := stats.Sources["streaming"] > 0
 	if hasTLS && hasStreaming {
-		conf += 0.15
+		score += 0.15
 	} else if hasTLS {
-		conf += 0.05
+		score += 0.05
 	} else if hasStreaming {
-		conf += 0.05
+		score += 0.05
 	}
 
 	if stats.MaxConcurrent > 1 {
-		conf += 0.05
+		score += 0.05
 	}
 
 	if stats.IsProgrammatic {
-		conf += 0.10
+		score += 0.10
 	}
 
 	if stats.Count >= 3 {
-		conf += 0.05
+		score += 0.05
 	}
 	if stats.Count >= 10 {
-		conf += 0.05
+		score += 0.05
 	}
 
-	conf -= infrastructurePenalty(input.Domain)
-	if conf < 0 {
-		conf = 0
+	score -= infrastructurePenalty(input.Domain)
+	if score < 0 {
+		score = 0
 	}
 
-	return conf, nil
+	return score, nil
 }
 
 func (d *DefaultClassifier) Close() error {
 	return nil
 }
 
-var infrastructurePenalties = map[string]Confidence{
+var infrastructurePenalties = map[string]AIScore{
 	"logs":           0.5,
 	"log":            0.5,
 	"logging":        0.5,
@@ -138,8 +138,8 @@ var infrastructurePenalties = map[string]Confidence{
 	"crl":            0.5,
 }
 
-func infrastructurePenalty(domain string) Confidence {
-	var totalPenalty Confidence
+func infrastructurePenalty(domain string) AIScore {
+	var totalPenalty AIScore
 	parts := strings.SplitSeq(domain, ".")
 	for part := range parts {
 		if penalty, ok := infrastructurePenalties[part]; ok {
