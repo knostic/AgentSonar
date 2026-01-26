@@ -38,6 +38,18 @@ func makeStatsInput(bytesIn, bytesOut int64, packetsIn, packetsOut int, duration
 	}
 }
 
+func withTempDB(t *testing.T, fn func(db *DB)) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.db")
+	db, err := OpenDB(path)
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	defer db.Close()
+	fn(db)
+}
+
 func withTempOverrides(t *testing.T, fn func(o *Overrides, path string)) {
 	t.Helper()
 	dir := t.TempDir()
