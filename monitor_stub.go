@@ -17,7 +17,7 @@ type stubMonitor struct {
 }
 
 func (m *stubMonitor) Start() error {
-	return fmt.Errorf("network monitoring requires darwin")
+	return fmt.Errorf("network monitoring requires darwin or linux")
 }
 
 func (m *stubMonitor) Stop() {}
