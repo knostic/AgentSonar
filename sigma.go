@@ -10,16 +10,16 @@ import (
 )
 
 type SigmaRule struct {
-	Title       string            `yaml:"title"`
-	ID          string            `yaml:"id"`
-	Status      string            `yaml:"status"`
-	Description string            `yaml:"description,omitempty"`
-	Author      string            `yaml:"author"`
-	Date        string            `yaml:"date"`
-	LogSource   SigmaLogSource    `yaml:"logsource"`
-	Detection   SigmaDetection    `yaml:"detection"`
-	Level       string            `yaml:"level"`
-	Tags        []string          `yaml:"tags,omitempty"`
+	Title       string         `yaml:"title"`
+	ID          string         `yaml:"id"`
+	Status      string         `yaml:"status"`
+	Description string         `yaml:"description,omitempty"`
+	Author      string         `yaml:"author"`
+	Date        string         `yaml:"date"`
+	LogSource   SigmaLogSource `yaml:"logsource"`
+	Detection   SigmaDetection `yaml:"detection"`
+	Level       string         `yaml:"level"`
+	Tags        []string       `yaml:"tags,omitempty"`
 }
 
 type SigmaLogSource struct {
@@ -130,8 +130,8 @@ func SigmaToAgent(rule SigmaRule) (Agent, []string, error) {
 	var noise []string
 
 	if rule.Detection.Filter != nil {
-		for key, val := range rule.Detection.Filter {
-			domains := extractDomains(key, val)
+		for _, val := range rule.Detection.Filter {
+			domains := extractDomains(val)
 			noise = append(noise, domains...)
 		}
 		return agent, noise, nil
@@ -183,8 +183,8 @@ func OverridesToSigmaYAML(data OverridesData) ([]byte, error) {
 func SigmaYAMLToOverrides(data []byte) (OverridesData, error) {
 	var result OverridesData
 
-	docs := strings.Split(string(data), "---")
-	for _, doc := range docs {
+	docs := strings.SplitSeq(string(data), "---")
+	for doc := range docs {
 		doc = strings.TrimSpace(doc)
 		if doc == "" {
 			continue
@@ -284,7 +284,7 @@ func sigmaValuesToPatterns(modifier string, val any) []string {
 	}
 }
 
-func extractDomains(key string, val any) []string {
+func extractDomains(val any) []string {
 	var domains []string
 	switch v := val.(type) {
 	case []any:

@@ -1,0 +1,32 @@
+services:
+  mongodb:
+    image: mongo:6
+    networks: [graylog]
+
+  opensearch:
+    image: opensearchproject/opensearch:2
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=Gr4yl0g_T3st!ng
+      - bootstrap.memory_lock=false
+    networks: [graylog]
+
+  graylog:
+    image: graylog/graylog:5.2
+    depends_on: [mongodb, opensearch]
+    ports:
+      - "9000:9000"
+      - "12202:12202"
+    environment:
+      - GRAYLOG_HTTP_EXTERNAL_URI=http://localhost:9000/
+      - GRAYLOG_PASSWORD_SECRET=somesecretpassword1234
+      - GRAYLOG_ROOT_PASSWORD_SHA2=8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
+      - GRAYLOG_MONGODB_URI=mongodb://mongodb:27017/graylog
+      - GRAYLOG_ELASTICSEARCH_HOSTS=http://opensearch:9200
+      - GRAYLOG_SERVER_JAVA_OPTS=-Djava.net.preferIPv4Stack=true -Xms512m -Xmx512m
+    networks: [graylog]
+
+networks:
+  graylog:
