@@ -3,6 +3,7 @@ package sai
 import (
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestAgentPatternMatching(t *testing.T) {
@@ -280,5 +281,100 @@ func TestExportImportIsolated(t *testing.T) {
 	}
 	if !o.IsNoise("example.com") {
 		t.Error("modifying exported data should not affect original noise")
+	}
+}
+
+func TestAddAgentSetsMetadata(t *testing.T) {
+	before := time.Now()
+	o := NewOverrides()
+	o.AddAgent("test", "test*", []string{"*.test.com"})
+	after := time.Now()
+
+	agent := o.GetAgent("test")
+	if agent == nil {
+		t.Fatal("agent not found")
+	}
+	if agent.CreatedAt.Before(before) || agent.CreatedAt.After(after) {
+		t.Errorf("CreatedAt should be between %v and %v, got %v", before, after, agent.CreatedAt)
+	}
+}
+
+func TestMetadataSurvivesSaveLoad(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "overrides.bin")
+
+	o := NewOverrides()
+	o.AddAgent("test", "test*", []string{"*.test.com"})
+
+	original := o.GetAgent("test")
+	if original == nil {
+		t.Fatal("agent not found")
+	}
+
+	if err := o.Save(path); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	loaded := NewOverrides()
+	if err := loaded.Load(path); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	agent := loaded.GetAgent("test")
+	if agent == nil {
+		t.Fatal("loaded agent not found")
+	}
+	if !agent.CreatedAt.Equal(original.CreatedAt) {
+		t.Errorf("CreatedAt not preserved: got %v, want %v", agent.CreatedAt, original.CreatedAt)
+	}
+}
+
+func TestImportPreservesMetadata(t *testing.T) {
+	createdAt := time.Date(2025, 6, 15, 10, 30, 0, 0, time.UTC)
+	data := OverridesData{
+		Agents: []Agent{
+			{Name: "test", Process: "test*", Domains: []string{"*.test.com"}, CreatedAt: createdAt},
+		},
+	}
+
+	o := NewOverrides()
+	o.Import(data)
+
+	agent := o.GetAgent("test")
+	if agent == nil {
+		t.Fatal("imported agent not found")
+	}
+	if !agent.CreatedAt.Equal(createdAt) {
+		t.Errorf("CreatedAt = %v, want %v", agent.CreatedAt, createdAt)
+	}
+}
+
+func TestBackwardCompatibilityZeroMetadata(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "overrides.bin")
+
+	data := OverridesData{
+		Agents: []Agent{
+			{Name: "legacy", Process: "legacy*", Domains: []string{"*.legacy.com"}},
+		},
+	}
+
+	o := NewOverrides()
+	o.Import(data)
+	if err := o.Save(path); err != nil {
+		t.Fatalf("Save failed: %v", err)
+	}
+
+	loaded := NewOverrides()
+	if err := loaded.Load(path); err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	agent := loaded.GetAgent("legacy")
+	if agent == nil {
+		t.Fatal("legacy agent not found")
+	}
+	if !agent.CreatedAt.IsZero() {
+		t.Errorf("CreatedAt should be zero for legacy data, got %v", agent.CreatedAt)
 	}
 }

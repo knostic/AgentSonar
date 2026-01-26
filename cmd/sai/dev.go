@@ -13,18 +13,24 @@ import (
 func init() {
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "nuke",
-		Short: "Remove database (dev only)",
+		Short: "Remove database and overrides (dev only)",
 		Run: func(cmd *cobra.Command, args []string) {
-			path := sai.DefaultDBPath()
-			if err := os.Remove(path); err != nil {
-				if os.IsNotExist(err) {
-					fmt.Println("database does not exist")
-					return
-				}
-				fmt.Fprintf(os.Stderr, "error: %v\n", err)
-				os.Exit(1)
+			paths := []string{
+				sai.DefaultDBPath(),
+				sai.DefaultDBPath() + "-shm",
+				sai.DefaultDBPath() + "-wal",
+				sai.DefaultOverridesPath(),
 			}
-			fmt.Printf("removed %s\n", path)
+			for _, p := range paths {
+				if err := os.Remove(p); err != nil {
+					if os.IsNotExist(err) {
+						continue
+					}
+					fmt.Fprintf(os.Stderr, "error: %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Printf("removed %s\n", p)
+			}
 		},
 	})
 }

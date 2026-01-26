@@ -7,20 +7,30 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Agent struct {
+	Name      string
+	Process   string
+	Domains   []string
+	CreatedAt time.Time
+}
+
+type ClassifierConfig struct {
 	Name    string
-	Process string
-	Domains []string
+	Command string
+	Args    []string
+	Timeout int
 }
 
 type Overrides struct {
-	agents   []Agent
-	noise    []string
-	mu       sync.RWMutex
-	path     string
-	modTime  int64
+	agents      []Agent
+	noise       []string
+	classifiers []ClassifierConfig
+	mu          sync.RWMutex
+	path        string
+	modTime     int64
 }
 
 func NewOverrides() *Overrides {
@@ -38,7 +48,12 @@ func (o *Overrides) AddAgent(name, process string, domains []string) {
 			return
 		}
 	}
-	o.agents = append(o.agents, Agent{Name: name, Process: process, Domains: domains})
+	o.agents = append(o.agents, Agent{
+		Name:      name,
+		Process:   process,
+		Domains:   domains,
+		CreatedAt: time.Now().UTC(),
+	})
 }
 
 func (o *Overrides) AddAgentDomain(name, domain string) {
@@ -166,9 +181,41 @@ func (o *Overrides) IsNonAIDomain(domain string) bool {
 	return o.IsNoise(domain)
 }
 
+func (o *Overrides) AddClassifier(cfg ClassifierConfig) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for i, c := range o.classifiers {
+		if c.Name == cfg.Name {
+			o.classifiers[i] = cfg
+			return
+		}
+	}
+	o.classifiers = append(o.classifiers, cfg)
+}
+
+func (o *Overrides) RemoveClassifier(name string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	for i, c := range o.classifiers {
+		if c.Name == name {
+			o.classifiers = append(o.classifiers[:i], o.classifiers[i+1:]...)
+			return
+		}
+	}
+}
+
+func (o *Overrides) ListClassifiers() []ClassifierConfig {
+	o.mu.RLock()
+	defer o.mu.RUnlock()
+	result := make([]ClassifierConfig, len(o.classifiers))
+	copy(result, o.classifiers)
+	return result
+}
+
 type OverridesData struct {
-	Agents []Agent
-	Noise  []string
+	Agents      []Agent
+	Noise       []string
+	Classifiers []ClassifierConfig
 }
 
 func (o *Overrides) Save(path string) error {
@@ -189,8 +236,9 @@ func (o *Overrides) Save(path string) error {
 	defer gzw.Close()
 
 	data := OverridesData{
-		Agents: o.agents,
-		Noise:  o.noise,
+		Agents:      o.agents,
+		Noise:       o.noise,
+		Classifiers: o.classifiers,
 	}
 
 	return gob.NewEncoder(gzw).Encode(data)
@@ -228,6 +276,7 @@ func (o *Overrides) loadLocked(path string) error {
 
 	o.agents = data.Agents
 	o.noise = data.Noise
+	o.classifiers = data.Classifiers
 	o.path = path
 	o.modTime = info.ModTime().UnixNano()
 	return nil
@@ -249,6 +298,12 @@ func (o *Overrides) reloadIfChanged() {
 	if info.ModTime().UnixNano() != o.modTime {
 		o.loadLocked(o.path)
 	}
+}
+
+func (o *Overrides) WatchPath(path string) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.path = path
 }
 
 func (o *Overrides) Export() OverridesData {

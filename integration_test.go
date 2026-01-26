@@ -263,6 +263,27 @@ func TestOverridesHotReload(t *testing.T) {
 	})
 }
 
+func TestOverridesHotReloadFromNonExistent(t *testing.T) {
+	withTempOverrides(t, func(_ *Overrides, path string) {
+		daemon := NewOverrides()
+		daemon.WatchPath(path)
+
+		if daemon.IsNoise("google.com") {
+			t.Fatal("google.com should not be noise initially")
+		}
+
+		triage := NewOverrides()
+		triage.AddNoise("google.com")
+		if err := triage.Save(path); err != nil {
+			t.Fatalf("triage save failed: %v", err)
+		}
+
+		if !daemon.IsNoise("google.com") {
+			t.Error("daemon should see noise created by triage")
+		}
+	})
+}
+
 func TestDNSAndTLSCombined(t *testing.T) {
 	queryPkt := makeDNSQueryPacket("api.anthropic.com")
 	domain := capture.ParseDNSQuery(queryPkt)

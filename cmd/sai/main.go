@@ -70,7 +70,8 @@ func init() {
 
 	agentsCmd.GroupID = "config"
 	ignoreCmd.GroupID = "config"
-	sigCmd.GroupID = "config"
+	exportCmd.GroupID = "config"
+	importCmd.GroupID = "config"
 	classifierCmd.GroupID = "config"
 
 	rootCmd.AddCommand(setupCmd)
@@ -82,7 +83,8 @@ func init() {
 	rootCmd.AddCommand(triageCmd)
 	rootCmd.AddCommand(agentsCmd)
 	rootCmd.AddCommand(ignoreCmd)
-	rootCmd.AddCommand(sigCmd)
+	rootCmd.AddCommand(exportCmd)
+	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(classifierCmd)
 }
 
@@ -94,10 +96,13 @@ func main() {
 
 func loadOverrides() *sai.Overrides {
 	filterSet := sai.NewOverrides()
+	path := sai.DefaultOverridesPath()
 	if sai.OverridesFileExists() {
-		if err := filterSet.Load(sai.DefaultOverridesPath()); err != nil {
+		if err := filterSet.Load(path); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not load filters: %v\n", err)
 		}
+	} else {
+		filterSet.WatchPath(path)
 	}
 	return filterSet
 }
@@ -158,8 +163,9 @@ func init() {
 }
 
 var agentsCmd = &cobra.Command{
-	Use:   "agents",
-	Short: "Manage AI agents",
+	Use:     "agents",
+	Aliases: []string{"agent"},
+	Short:   "Manage AI agents",
 	Run: func(cmd *cobra.Command, args []string) {
 		listAgents()
 	},
@@ -175,20 +181,22 @@ var agentsAddCmd = &cobra.Command{
 }
 
 var agentsAddDomainCmd = &cobra.Command{
-	Use:   "add-domain <name> <domain-pattern>",
-	Short: "Add domain to agent",
-	Args:  cobra.ExactArgs(2),
+	Use:   "add-domain <name> <domain-pattern>...",
+	Short: "Add domains to agent (use - for stdin)",
+	Args:  cobra.MinimumNArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
-		addAgentDomain(args[0], args[1])
+		addAgentDomain(args[0], args[1:])
 	},
 }
 
 var agentsRmCmd = &cobra.Command{
-	Use:   "rm <name>",
-	Short: "Remove agent",
-	Args:  cobra.ExactArgs(1),
+	Use:   "rm <name>...",
+	Short: "Remove agents",
+	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		removeAgent(args[0])
+		for _, name := range args {
+			removeAgent(name)
+		}
 	},
 }
 
@@ -199,28 +207,31 @@ func init() {
 }
 
 var ignoreCmd = &cobra.Command{
-	Use:   "ignore",
-	Short: "Manage ignored domains",
+	Use:     "ignore",
+	Aliases: []string{"ignores"},
+	Short:   "Manage ignored domains",
 	Run: func(cmd *cobra.Command, args []string) {
 		listIgnored()
 	},
 }
 
 var ignoreAddCmd = &cobra.Command{
-	Use:   "add <domain>",
-	Short: "Add domain to ignore list",
-	Args:  cobra.ExactArgs(1),
+	Use:   "add <domain>...",
+	Short: "Add domains to ignore list (use - for stdin)",
+	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		addIgnore(args[0])
+		addIgnore(args)
 	},
 }
 
 var ignoreRmCmd = &cobra.Command{
-	Use:   "rm <domain>",
-	Short: "Remove domain from ignore list",
-	Args:  cobra.ExactArgs(1),
+	Use:   "rm <domain>...",
+	Short: "Remove domains from ignore list",
+	Args:  cobra.MinimumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		removeIgnore(args[0])
+		for _, domain := range args {
+			removeIgnore(domain)
+		}
 	},
 }
 
@@ -237,12 +248,7 @@ var triageCmd = &cobra.Command{
 	},
 }
 
-var sigCmd = &cobra.Command{
-	Use:   "sig",
-	Short: "Signature management",
-}
-
-var sigExportCmd = &cobra.Command{
+var exportCmd = &cobra.Command{
 	Use:   "export <file>",
 	Short: "Export signatures to file",
 	Args:  cobra.ExactArgs(1),
@@ -251,7 +257,7 @@ var sigExportCmd = &cobra.Command{
 	},
 }
 
-var sigImportCmd = &cobra.Command{
+var importCmd = &cobra.Command{
 	Use:   "import <file>",
 	Short: "Import signatures from file",
 	Args:  cobra.ExactArgs(1),
@@ -260,19 +266,10 @@ var sigImportCmd = &cobra.Command{
 	},
 }
 
-func init() {
-	sigCmd.AddCommand(sigExportCmd)
-	sigCmd.AddCommand(sigImportCmd)
-}
-
 var classifierCmd = &cobra.Command{
-	Use:   "classifier",
-	Short: "Manage external classifiers",
-}
-
-var classifierListCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List loaded classifiers",
+	Use:     "classifier",
+	Aliases: []string{"classifiers"},
+	Short:   "Manage external classifiers",
 	Run: func(cmd *cobra.Command, args []string) {
 		listClassifiers()
 	},
@@ -297,7 +294,6 @@ var classifierUnloadCmd = &cobra.Command{
 }
 
 func init() {
-	classifierCmd.AddCommand(classifierListCmd)
 	classifierCmd.AddCommand(classifierLoadCmd)
 	classifierCmd.AddCommand(classifierUnloadCmd)
 }
@@ -463,15 +459,15 @@ func listAgents() {
 	agents := filterSet.ListAgents()
 
 	if len(agents) == 0 {
-		fmt.Println("no agents configured")
 		return
 	}
 
 	for _, a := range agents {
-		fmt.Printf("%s (process: %s)\n", a.Name, a.Process)
-		for _, d := range a.Domains {
-			fmt.Printf("  -> %s\n", d)
+		createdAt := "-"
+		if !a.CreatedAt.IsZero() {
+			createdAt = a.CreatedAt.Local().Format(time.RFC3339)
 		}
+		fmt.Printf("%s\t%s\t%s\t%s\n", a.Name, a.Process, strings.Join(a.Domains, ","), createdAt)
 	}
 }
 
@@ -479,32 +475,39 @@ func addAgent(name, process, domain string) {
 	filterSet := loadOverrides()
 	filterSet.AddAgent(name, process, []string{domain})
 	saveOverrides(filterSet)
-	fmt.Printf("added agent: %s (process: %s, domain: %s)\n", name, process, domain)
 }
 
-func addAgentDomain(name, domain string) {
+func addAgentDomain(name string, domains []string) {
 	filterSet := loadOverrides()
 	if filterSet.GetAgent(name) == nil {
 		fmt.Fprintf(os.Stderr, "error: agent %s not found\n", name)
 		os.Exit(1)
 	}
-	filterSet.AddAgentDomain(name, domain)
+	if len(domains) == 1 && domains[0] == "-" {
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			if d := strings.TrimSpace(scanner.Text()); d != "" {
+				filterSet.AddAgentDomain(name, d)
+			}
+		}
+	} else {
+		for _, d := range domains {
+			filterSet.AddAgentDomain(name, d)
+		}
+	}
 	saveOverrides(filterSet)
-	fmt.Printf("added domain %s to agent %s\n", domain, name)
 }
 
 func removeAgent(name string) {
 	filterSet := loadOverrides()
 	filterSet.RemoveAgent(name)
 	saveOverrides(filterSet)
-	fmt.Printf("removed agent: %s\n", name)
 }
 
 func listIgnored() {
 	filterSet := loadOverrides()
 	domains := filterSet.ListNoise()
 	if len(domains) == 0 {
-		fmt.Println("no ignored domains")
 		return
 	}
 	for _, d := range domains {
@@ -512,18 +515,27 @@ func listIgnored() {
 	}
 }
 
-func addIgnore(domain string) {
+func addIgnore(domains []string) {
 	filterSet := loadOverrides()
-	filterSet.AddNoise(domain)
+	if len(domains) == 1 && domains[0] == "-" {
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			if d := strings.TrimSpace(scanner.Text()); d != "" {
+				filterSet.AddNoise(d)
+			}
+		}
+	} else {
+		for _, d := range domains {
+			filterSet.AddNoise(d)
+		}
+	}
 	saveOverrides(filterSet)
-	fmt.Printf("added to ignore list: %s\n", domain)
 }
 
 func removeIgnore(domain string) {
 	filterSet := loadOverrides()
 	filterSet.RemoveNoise(domain)
 	saveOverrides(filterSet)
-	fmt.Printf("removed from ignore list: %s\n", domain)
 }
 
 func runTriage() {
@@ -629,8 +641,6 @@ func exportSignatures(dst string) {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-
-	fmt.Printf("exported signatures to %s\n", dst)
 }
 
 func importSignatures(src string) {
@@ -649,8 +659,6 @@ func importSignatures(src string) {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-
-	fmt.Printf("imported signatures from %s\n", src)
 }
 
 func copyFile(src, dst string) error {
@@ -671,20 +679,34 @@ func copyFile(src, dst string) error {
 }
 
 func listClassifiers() {
-	fmt.Println("default (built-in traffic heuristics)")
+	fmt.Printf("%s\t%s\n", "default", "(built-in)")
+	overrides := loadOverrides()
+	for _, c := range overrides.ListClassifiers() {
+		fmt.Printf("%s\t%s\n", c.Name, c.Command)
+	}
 }
 
 func loadClassifier(configPath string) {
-	c, err := sai.LoadProcessClassifier(configPath)
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("loaded classifier: %s\n", c.Name())
-	c.Close()
+	var cfg sai.ClassifierConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	overrides := loadOverrides()
+	overrides.AddClassifier(cfg)
+	saveOverrides(overrides)
+	fmt.Printf("loaded classifier: %s\n", cfg.Name)
 }
 
 func unloadClassifier(name string) {
+	overrides := loadOverrides()
+	overrides.RemoveClassifier(name)
+	saveOverrides(overrides)
 	fmt.Printf("unloaded classifier: %s\n", name)
 }
 
