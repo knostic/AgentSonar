@@ -253,7 +253,8 @@ var exportCmd = &cobra.Command{
 	Short: "Export signatures to file",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		exportSignatures(args[0])
+		format, _ := cmd.Flags().GetString("format")
+		exportSignatures(args[0], format)
 	},
 }
 
@@ -262,8 +263,14 @@ var importCmd = &cobra.Command{
 	Short: "Import signatures from file",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		importSignatures(args[0])
+		format, _ := cmd.Flags().GetString("format")
+		importSignatures(args[0], format)
 	},
+}
+
+func init() {
+	exportCmd.Flags().StringP("format", "f", "binary", "output format (binary, sigma)")
+	importCmd.Flags().StringP("format", "f", "binary", "input format (binary, sigma)")
 }
 
 var classifierCmd = &cobra.Command{
@@ -648,32 +655,74 @@ func runTriage() {
 	saveOverrides(filterSet)
 }
 
-func exportSignatures(dst string) {
+func exportSignatures(dst, format string) {
 	if !sai.OverridesFileExists() {
 		fmt.Fprintln(os.Stderr, "no filters to export")
 		os.Exit(1)
 	}
 
-	if err := copyFile(sai.DefaultOverridesPath(), dst); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	switch format {
+	case "binary":
+		if err := copyFile(sai.DefaultOverridesPath(), dst); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+	case "sigma":
+		filterSet := loadOverrides()
+		data := filterSet.Export()
+		yamlData, err := sai.OverridesToSigmaYAML(data)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		if err := os.WriteFile(dst, yamlData, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "error: unknown format %q (use binary or sigma)\n", format)
 		os.Exit(1)
 	}
 }
 
-func importSignatures(src string) {
+func importSignatures(src, format string) {
 	if _, err := os.Stat(src); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %s not found\n", src)
 		os.Exit(1)
 	}
 
-	dst := sai.DefaultOverridesPath()
-	if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err := copyFile(src, dst); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	switch format {
+	case "binary":
+		dst := sai.DefaultOverridesPath()
+		if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		if err := copyFile(src, dst); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+	case "sigma":
+		data, err := os.ReadFile(src)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
+		overridesData, err := sai.SigmaYAMLToOverrides(data)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error parsing sigma rules: %v\n", err)
+			os.Exit(1)
+		}
+		filterSet := loadOverrides()
+		for _, agent := range overridesData.Agents {
+			filterSet.AddAgent(agent.Name, agent.Process, agent.Domains)
+		}
+		for _, domain := range overridesData.Noise {
+			filterSet.AddNoise(domain)
+		}
+		saveOverrides(filterSet)
+	default:
+		fmt.Fprintf(os.Stderr, "error: unknown format %q (use binary or sigma)\n", format)
 		os.Exit(1)
 	}
 }

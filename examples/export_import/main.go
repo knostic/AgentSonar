@@ -24,6 +24,10 @@ func main() {
 
 	// Simulate storing and retrieving from external storage
 	// In practice: saveToRedis(jsonBytes), loadFromPostgres(), etc.
+	//
+	// For Sigma YAML format (SIEM integration):
+	//   yamlData, _ := sai.OverridesToSigmaYAML(data)
+	//   parsed, _ := sai.SigmaYAMLToOverrides(yamlData)
 
 	loaded := sai.NewOverrides()
 	loaded.Import(data)

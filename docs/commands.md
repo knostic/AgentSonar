@@ -136,14 +136,24 @@ Actions:
 - `s` - skip
 - `q` - quit and save
 
-## sai sig
+## sai export / sai import
 
-Overrides management - export/import overrides file.
+Export/import overrides file.
 
 ```bash
-sai sig export <file>   # export overrides to file
-sai sig import <file>   # import overrides from file
+sai export [--format binary|sigma] <file>
+sai import [--format binary|sigma] <file>
 ```
+
+| Flag | Description |
+|------|-------------|
+| `-f, --format` | Format: `binary` (default) or `sigma` |
+
+Formats:
+- `binary`: gob-encoded binary (default, for machine use)
+- `sigma`: Sigma YAML rules (human-readable, for SIEM integration)
+
+Sigma format exports agents as detection rules and noise domains as filter rules, compatible with [sigconverter.io](https://sigconverter.io) and sigma-cli.
 
 Overrides file (`~/.config/sai/overrides.bin`) contains:
 - Named AI agents (process + domain patterns)
