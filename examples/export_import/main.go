@@ -1,5 +1,5 @@
 // Export/Import example.
-// Shows how to use FilterSet with custom storage instead of file-based persistence.
+// Shows how to use Overrides with custom storage instead of file-based persistence.
 package main
 
 import (
@@ -10,11 +10,11 @@ import (
 )
 
 func main() {
-	fs := sai.NewFilterSet()
+	fs := sai.NewOverrides()
 	fs.AddAgent("claude", "claude*", []string{"*.anthropic.com"})
 	fs.AddAgent("openai", "python*", []string{"*.openai.com", "api.openai.com"})
-	fs.AddNonAIDomain("google.com")
-	fs.AddNonAIDomain("apple.com")
+	fs.AddNoise("google.com")
+	fs.AddNoise("apple.com")
 
 	data := fs.Export()
 
@@ -25,7 +25,7 @@ func main() {
 	// Simulate storing and retrieving from external storage
 	// In practice: saveToRedis(jsonBytes), loadFromPostgres(), etc.
 
-	loaded := sai.NewFilterSet()
+	loaded := sai.NewOverrides()
 	loaded.Import(data)
 
 	fmt.Println("\nVerifying imported data:")
@@ -43,7 +43,7 @@ func main() {
 
 	for _, t := range tests {
 		agent := loaded.MatchAgent(t.process, t.domain)
-		nonAI := loaded.IsNonAIDomain(t.domain)
+		nonAI := loaded.IsNoise(t.domain)
 
 		status := "unknown"
 		if agent != "" {

@@ -61,18 +61,18 @@ func main() {
 	}
 }
 
-func loadFilterSet() *sai.FilterSet {
-	filterSet := sai.NewFilterSet()
-	if sai.FilterFileExists() {
-		if err := filterSet.Load(sai.DefaultFilterPath()); err != nil {
+func loadOverrides() *sai.Overrides {
+	filterSet := sai.NewOverrides()
+	if sai.OverridesFileExists() {
+		if err := filterSet.Load(sai.DefaultOverridesPath()); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not load filters: %v\n", err)
 		}
 	}
 	return filterSet
 }
 
-func saveFilterSet(filterSet *sai.FilterSet) {
-	if err := filterSet.Save(sai.DefaultFilterPath()); err != nil {
+func saveOverrides(filterSet *sai.Overrides) {
+	if err := filterSet.Save(sai.DefaultOverridesPath()); err != nil {
 		fmt.Fprintf(os.Stderr, "error saving filters: %v\n", err)
 	}
 }
@@ -303,10 +303,10 @@ func runMonitor(cmd *cobra.Command) {
 		}
 	}()
 
-	filterSet := loadFilterSet()
+	filterSet := loadOverrides()
 	registry := sai.NewClassifierRegistry()
 	registry.Add(sai.NewDefaultClassifier())
-	acc := sai.NewAccumulatorWithFilters(filterSet, registry)
+	acc := sai.NewAccumulatorWithOverrides(filterSet, registry)
 
 	mon := sai.NewMonitor(sai.Config{
 		Interface:  iface,
@@ -340,7 +340,7 @@ func runMonitor(cmd *cobra.Command) {
 				db.InsertEvent(event)
 			}
 
-			if !allDomains && filterSet.IsNonAIDomain(event.Domain) {
+			if !allDomains && filterSet.IsNoise(event.Domain) {
 				continue
 			}
 
@@ -382,10 +382,10 @@ func runEvents(cmd *cobra.Command) {
 		}
 	}
 
-	filterSet := loadFilterSet()
+	filterSet := loadOverrides()
 	registry := sai.NewClassifierRegistry()
 	registry.Add(sai.NewDefaultClassifier())
-	acc := sai.NewAccumulatorWithFilters(filterSet, registry)
+	acc := sai.NewAccumulatorWithOverrides(filterSet, registry)
 
 	allEvents, _ := db.QueryEvents(0, "", "", 0)
 	for _, e := range allEvents {
@@ -401,7 +401,7 @@ func runEvents(cmd *cobra.Command) {
 	if jsonOutput {
 		enc := json.NewEncoder(os.Stdout)
 		for _, e := range events {
-			if filterSet.IsNonAIDomain(e.Domain) {
+			if filterSet.IsNoise(e.Domain) {
 				continue
 			}
 			e.Agent = filterSet.MatchAgent(e.Process, e.Domain)
@@ -413,7 +413,7 @@ func runEvents(cmd *cobra.Command) {
 		}
 	} else {
 		for _, e := range events {
-			if filterSet.IsNonAIDomain(e.Domain) {
+			if filterSet.IsNoise(e.Domain) {
 				continue
 			}
 			agent := filterSet.MatchAgent(e.Process, e.Domain)
@@ -431,7 +431,7 @@ func runEvents(cmd *cobra.Command) {
 }
 
 func listAgents() {
-	filterSet := loadFilterSet()
+	filterSet := loadOverrides()
 	agents := filterSet.ListAgents()
 
 	if len(agents) == 0 {
@@ -448,33 +448,33 @@ func listAgents() {
 }
 
 func addAgent(name, process, domain string) {
-	filterSet := loadFilterSet()
+	filterSet := loadOverrides()
 	filterSet.AddAgent(name, process, []string{domain})
-	saveFilterSet(filterSet)
+	saveOverrides(filterSet)
 	fmt.Printf("added agent: %s (process: %s, domain: %s)\n", name, process, domain)
 }
 
 func addAgentDomain(name, domain string) {
-	filterSet := loadFilterSet()
+	filterSet := loadOverrides()
 	if filterSet.GetAgent(name) == nil {
 		fmt.Fprintf(os.Stderr, "error: agent %s not found\n", name)
 		os.Exit(1)
 	}
 	filterSet.AddAgentDomain(name, domain)
-	saveFilterSet(filterSet)
+	saveOverrides(filterSet)
 	fmt.Printf("added domain %s to agent %s\n", domain, name)
 }
 
 func removeAgent(name string) {
-	filterSet := loadFilterSet()
+	filterSet := loadOverrides()
 	filterSet.RemoveAgent(name)
-	saveFilterSet(filterSet)
+	saveOverrides(filterSet)
 	fmt.Printf("removed agent: %s\n", name)
 }
 
 func listIgnored() {
-	filterSet := loadFilterSet()
-	domains := filterSet.ListIgnoredDomains()
+	filterSet := loadOverrides()
+	domains := filterSet.ListNoise()
 	if len(domains) == 0 {
 		fmt.Println("no ignored domains")
 		return
@@ -485,16 +485,16 @@ func listIgnored() {
 }
 
 func addIgnore(domain string) {
-	filterSet := loadFilterSet()
-	filterSet.AddNonAIDomain(domain)
-	saveFilterSet(filterSet)
+	filterSet := loadOverrides()
+	filterSet.AddNoise(domain)
+	saveOverrides(filterSet)
 	fmt.Printf("added to ignore list: %s\n", domain)
 }
 
 func removeIgnore(domain string) {
-	filterSet := loadFilterSet()
-	filterSet.RemoveIgnoredDomain(domain)
-	saveFilterSet(filterSet)
+	filterSet := loadOverrides()
+	filterSet.RemoveNoise(domain)
+	saveOverrides(filterSet)
 	fmt.Printf("removed from ignore list: %s\n", domain)
 }
 
@@ -506,10 +506,10 @@ func runTriage() {
 	}
 	defer db.Close()
 
-	filterSet := loadFilterSet()
+	filterSet := loadOverrides()
 	registry := sai.NewClassifierRegistry()
 	registry.Add(sai.NewDefaultClassifier())
-	acc := sai.NewAccumulatorWithFilters(filterSet, registry)
+	acc := sai.NewAccumulatorWithOverrides(filterSet, registry)
 
 	allEvents, _ := db.QueryEvents(0, "", "", 0)
 	for _, e := range allEvents {
@@ -539,7 +539,7 @@ func runTriage() {
 		if filterSet.MatchAgent(e.Process, e.Domain) != "" {
 			continue
 		}
-		if filterSet.IsNonAI(e.Process, e.Domain) || filterSet.IsNonAIDomain(e.Domain) {
+		if filterSet.IsNoise(e.Domain) {
 			continue
 		}
 
@@ -577,27 +577,27 @@ func runTriage() {
 			fmt.Printf("agent: %s -> %s\n", name, domainPattern)
 
 		case "n", "noise":
-			filterSet.AddNonAI(e.Process, e.Domain)
-			fmt.Printf("marked as noise: %s -> %s\n", e.Process, e.Domain)
+			filterSet.AddNoise(e.Domain)
+			fmt.Printf("marked as noise: %s\n", e.Domain)
 
 		case "q", "quit":
-			saveFilterSet(filterSet)
+			saveOverrides(filterSet)
 			return
 		}
 
 		seen[key] = true
 	}
 
-	saveFilterSet(filterSet)
+	saveOverrides(filterSet)
 }
 
 func exportSignatures(dst string) {
-	if !sai.FilterFileExists() {
+	if !sai.OverridesFileExists() {
 		fmt.Fprintln(os.Stderr, "no filters to export")
 		os.Exit(1)
 	}
 
-	if err := copyFile(sai.DefaultFilterPath(), dst); err != nil {
+	if err := copyFile(sai.DefaultOverridesPath(), dst); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -611,7 +611,7 @@ func importSignatures(src string) {
 		os.Exit(1)
 	}
 
-	dst := sai.DefaultFilterPath()
+	dst := sai.DefaultOverridesPath()
 	if err := os.MkdirAll(filepath.Dir(dst), 0700); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -696,9 +696,9 @@ func runDoctor() {
 		db.Close()
 	}
 
-	fmt.Print("Filters:         ")
-	if sai.FilterFileExists() {
-		fmt.Printf("ok (%s)\n", sai.DefaultFilterPath())
+	fmt.Print("Overrides:       ")
+	if sai.OverridesFileExists() {
+		fmt.Printf("ok (%s)\n", sai.DefaultOverridesPath())
 	} else {
 		fmt.Println("not initialized")
 	}
@@ -713,7 +713,7 @@ func runDoctor() {
 	}
 
 	fmt.Print("Agents:          ")
-	filterSet := loadFilterSet()
+	filterSet := loadOverrides()
 	agents := filterSet.ListAgents()
 	if len(agents) == 0 {
 		fmt.Println("none configured")
@@ -866,12 +866,14 @@ func checkBPF() bool {
 	if len(matches) == 0 {
 		return false
 	}
-	f, err := os.OpenFile(matches[0], os.O_RDONLY, 0)
-	if err != nil {
-		return false
+	for _, path := range matches {
+		f, err := os.OpenFile(path, os.O_RDONLY, 0)
+		if err == nil {
+			f.Close()
+			return true
+		}
 	}
-	f.Close()
-	return true
+	return false
 }
 
 func listUsableInterfaces() []string {

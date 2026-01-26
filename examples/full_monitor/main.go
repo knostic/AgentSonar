@@ -15,13 +15,13 @@ import (
 )
 
 func main() {
-	fs := sai.NewFilterSet()
+	fs := sai.NewOverrides()
 	fs.AddAgent("claude", "claude*", []string{"*.anthropic.com"})
 	fs.AddAgent("openai", "python*", []string{"*.openai.com"})
 	fs.AddAgent("cursor", "cursor*", []string{"*.anthropic.com", "*.openai.com"})
-	fs.AddNonAIDomain("google.com")
-	fs.AddNonAIDomain("apple.com")
-	fs.AddNonAIDomain("cloudflare.com")
+	fs.AddNoise("google.com")
+	fs.AddNoise("apple.com")
+	fs.AddNoise("cloudflare.com")
 
 	registry := sai.NewClassifierRegistry()
 	registry.Add(sai.NewDefaultClassifier())

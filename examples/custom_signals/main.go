@@ -30,7 +30,7 @@ func (s *MapSignals) AddAgent(name, processPattern string, domains []string) {
 	s.processes[processPattern] = name
 }
 
-func (s *MapSignals) AddNonAIDomain(domain string) {
+func (s *MapSignals) AddNoise(domain string) {
 	s.nonAIDomains[strings.ToLower(domain)] = true
 }
 
@@ -85,7 +85,7 @@ func main() {
 	signals := NewMapSignals()
 	signals.AddAgent("claude", "claude*", []string{"*.anthropic.com"})
 	signals.AddAgent("openai", "python*", []string{"*.openai.com"})
-	signals.AddNonAIDomain("google.com")
+	signals.AddNoise("google.com")
 
 	registry := sai.NewClassifierRegistry()
 	registry.Add(sai.NewDefaultClassifier())

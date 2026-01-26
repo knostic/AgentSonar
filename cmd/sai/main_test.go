@@ -17,7 +17,7 @@ func withTestEnv(t *testing.T, fn func(dir string)) {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("SAI_DB_PATH", filepath.Join(dir, "sai.db"))
-	t.Setenv("SAI_FILTER_PATH", filepath.Join(dir, "filters.bin"))
+	t.Setenv("SAI_OVERRIDES_PATH", filepath.Join(dir, "overrides.bin"))
 	t.Setenv("SAI_CONFIG_DIR", dir)
 	fn(dir)
 }
@@ -36,11 +36,11 @@ func runCmd(cmd *cobra.Command, args ...string) (string, string, error) {
 
 func TestAgentsAddAndList(t *testing.T) {
 	withTestEnv(t, func(dir string) {
-		filterSet := sai.NewFilterSet()
+		filterSet := sai.NewOverrides()
 		filterSet.AddAgent("test-agent", "python*", []string{"*.openai.com"})
-		filterSet.Save(sai.DefaultFilterPath())
+		filterSet.Save(sai.DefaultOverridesPath())
 
-		loaded := loadFilterSet()
+		loaded := loadOverrides()
 		agents := loaded.ListAgents()
 
 		if len(agents) != 1 {
@@ -60,15 +60,15 @@ func TestAgentsAddAndList(t *testing.T) {
 
 func TestAgentsAddDomain(t *testing.T) {
 	withTestEnv(t, func(dir string) {
-		filterSet := sai.NewFilterSet()
+		filterSet := sai.NewOverrides()
 		filterSet.AddAgent("test-agent", "python*", []string{"*.openai.com"})
-		filterSet.Save(sai.DefaultFilterPath())
+		filterSet.Save(sai.DefaultOverridesPath())
 
-		loaded := loadFilterSet()
+		loaded := loadOverrides()
 		loaded.AddAgentDomain("test-agent", "api.anthropic.com")
-		saveFilterSet(loaded)
+		saveOverrides(loaded)
 
-		reloaded := loadFilterSet()
+		reloaded := loadOverrides()
 		agent := reloaded.GetAgent("test-agent")
 
 		if agent == nil {
@@ -93,10 +93,10 @@ func TestAgentsAddDomain(t *testing.T) {
 
 func TestAgentsAddDomainNonExistent(t *testing.T) {
 	withTestEnv(t, func(dir string) {
-		filterSet := sai.NewFilterSet()
-		filterSet.Save(sai.DefaultFilterPath())
+		filterSet := sai.NewOverrides()
+		filterSet.Save(sai.DefaultOverridesPath())
 
-		loaded := loadFilterSet()
+		loaded := loadOverrides()
 		if loaded.GetAgent("nonexistent") != nil {
 			t.Error("nonexistent agent should not exist")
 		}
@@ -105,15 +105,15 @@ func TestAgentsAddDomainNonExistent(t *testing.T) {
 
 func TestAgentsRemove(t *testing.T) {
 	withTestEnv(t, func(dir string) {
-		filterSet := sai.NewFilterSet()
+		filterSet := sai.NewOverrides()
 		filterSet.AddAgent("test-agent", "python*", []string{"*.openai.com"})
-		filterSet.Save(sai.DefaultFilterPath())
+		filterSet.Save(sai.DefaultOverridesPath())
 
-		loaded := loadFilterSet()
+		loaded := loadOverrides()
 		loaded.RemoveAgent("test-agent")
-		saveFilterSet(loaded)
+		saveOverrides(loaded)
 
-		reloaded := loadFilterSet()
+		reloaded := loadOverrides()
 		agents := reloaded.ListAgents()
 
 		if len(agents) != 0 {
@@ -124,11 +124,11 @@ func TestAgentsRemove(t *testing.T) {
 
 func TestIgnoreCommand(t *testing.T) {
 	withTestEnv(t, func(dir string) {
-		filterSet := sai.NewFilterSet()
-		filterSet.AddNonAIDomain("google.com")
-		filterSet.Save(sai.DefaultFilterPath())
+		filterSet := sai.NewOverrides()
+		filterSet.AddNoise("google.com")
+		filterSet.Save(sai.DefaultOverridesPath())
 
-		loaded := loadFilterSet()
+		loaded := loadOverrides()
 
 		if !loaded.IsNonAIDomain("google.com") {
 			t.Error("google.com should be ignored")
@@ -141,16 +141,16 @@ func TestIgnoreCommand(t *testing.T) {
 
 func TestIgnoreRemove(t *testing.T) {
 	withTestEnv(t, func(dir string) {
-		filterSet := sai.NewFilterSet()
-		filterSet.AddNonAIDomain("google.com")
-		filterSet.Save(sai.DefaultFilterPath())
+		filterSet := sai.NewOverrides()
+		filterSet.AddNoise("google.com")
+		filterSet.Save(sai.DefaultOverridesPath())
 
-		loaded := loadFilterSet()
-		loaded.RemoveIgnoredDomain("google.com")
-		saveFilterSet(loaded)
+		loaded := loadOverrides()
+		loaded.RemoveNoise("google.com")
+		saveOverrides(loaded)
 
-		reloaded := loadFilterSet()
-		domains := reloaded.ListIgnoredDomains()
+		reloaded := loadOverrides()
+		domains := reloaded.ListNoise()
 
 		for _, d := range domains {
 			if d == "google.com" {
@@ -296,14 +296,14 @@ func TestEventsLimit(t *testing.T) {
 
 func TestSigExportImport(t *testing.T) {
 	withTestEnv(t, func(dir string) {
-		filterSet := sai.NewFilterSet()
+		filterSet := sai.NewOverrides()
 		filterSet.AddAgent("test-agent", "python*", []string{"*.openai.com"})
-		filterSet.AddNonAIDomain("google.com")
-		filterSet.Save(sai.DefaultFilterPath())
+		filterSet.AddNoise("google.com")
+		filterSet.Save(sai.DefaultOverridesPath())
 
 		exportPath := filepath.Join(dir, "export.bin")
 
-		src, err := os.Open(sai.DefaultFilterPath())
+		src, err := os.Open(sai.DefaultOverridesPath())
 		if err != nil {
 			t.Fatalf("open source failed: %v", err)
 		}
@@ -319,13 +319,13 @@ func TestSigExportImport(t *testing.T) {
 			t.Fatalf("copy failed: %v", err)
 		}
 
-		os.Remove(sai.DefaultFilterPath())
+		os.Remove(sai.DefaultOverridesPath())
 
 		src, err = os.Open(exportPath)
 		if err != nil {
 			t.Fatalf("open export failed: %v", err)
 		}
-		dst, err = os.Create(sai.DefaultFilterPath())
+		dst, err = os.Create(sai.DefaultOverridesPath())
 		if err != nil {
 			src.Close()
 			t.Fatalf("create import failed: %v", err)
@@ -337,7 +337,7 @@ func TestSigExportImport(t *testing.T) {
 			t.Fatalf("import copy failed: %v", err)
 		}
 
-		loaded := loadFilterSet()
+		loaded := loadOverrides()
 		if loaded.MatchAgent("python3", "api.openai.com") == "" {
 			t.Error("imported filters should match agent")
 		}
@@ -387,11 +387,11 @@ func TestDoctorComponents(t *testing.T) {
 		}
 		db.Close()
 
-		filterSet := sai.NewFilterSet()
+		filterSet := sai.NewOverrides()
 		filterSet.AddAgent("test", "test*", []string{"*.test.com"})
-		filterSet.Save(sai.DefaultFilterPath())
+		filterSet.Save(sai.DefaultOverridesPath())
 
-		if !sai.FilterFileExists() {
+		if !sai.OverridesFileExists() {
 			t.Error("filters file should exist")
 		}
 
@@ -400,27 +400,27 @@ func TestDoctorComponents(t *testing.T) {
 			t.Errorf("DB path %q should contain temp dir %q", dbPath, dir)
 		}
 
-		filterPath := sai.DefaultFilterPath()
+		filterPath := sai.DefaultOverridesPath()
 		if !strings.Contains(filterPath, dir) {
 			t.Errorf("filter path %q should contain temp dir %q", filterPath, dir)
 		}
 	})
 }
 
-func TestFilterSetRoundTrip(t *testing.T) {
+func TestOverridesRoundTrip(t *testing.T) {
 	withTestEnv(t, func(dir string) {
-		fs := sai.NewFilterSet()
+		fs := sai.NewOverrides()
 		fs.AddAgent("agent1", "proc1*", []string{"*.dom1.com"})
 		fs.AddAgent("agent2", "proc2*", []string{"*.dom2.com", "api.dom2.com"})
-		fs.AddNonAIDomain("ignored1.com")
-		fs.AddNonAIDomain("ignored2.com")
+		fs.AddNoise("ignored1.com")
+		fs.AddNoise("ignored2.com")
 
-		if err := fs.Save(sai.DefaultFilterPath()); err != nil {
+		if err := fs.Save(sai.DefaultOverridesPath()); err != nil {
 			t.Fatalf("save failed: %v", err)
 		}
 
-		loaded := sai.NewFilterSet()
-		if err := loaded.Load(sai.DefaultFilterPath()); err != nil {
+		loaded := sai.NewOverrides()
+		if err := loaded.Load(sai.DefaultOverridesPath()); err != nil {
 			t.Fatalf("load failed: %v", err)
 		}
 
@@ -429,7 +429,7 @@ func TestFilterSetRoundTrip(t *testing.T) {
 			t.Errorf("expected 2 agents, got %d", len(agents))
 		}
 
-		ignored := loaded.ListIgnoredDomains()
+		ignored := loaded.ListNoise()
 		if len(ignored) != 2 {
 			t.Errorf("expected 2 ignored domains, got %d", len(ignored))
 		}
@@ -455,13 +455,13 @@ func TestPathEnvVars(t *testing.T) {
 	customFilter := filepath.Join(dir, "custom.bin")
 
 	t.Setenv("SAI_DB_PATH", customDB)
-	t.Setenv("SAI_FILTER_PATH", customFilter)
+	t.Setenv("SAI_OVERRIDES_PATH", customFilter)
 
 	if sai.DefaultDBPath() != customDB {
 		t.Errorf("DefaultDBPath() = %q, want %q", sai.DefaultDBPath(), customDB)
 	}
-	if sai.DefaultFilterPath() != customFilter {
-		t.Errorf("DefaultFilterPath() = %q, want %q", sai.DefaultFilterPath(), customFilter)
+	if sai.DefaultOverridesPath() != customFilter {
+		t.Errorf("DefaultOverridesPath() = %q, want %q", sai.DefaultOverridesPath(), customFilter)
 	}
 }
 

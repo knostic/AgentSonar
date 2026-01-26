@@ -38,12 +38,12 @@ func makeStatsInput(bytesIn, bytesOut int64, packetsIn, packetsOut int, duration
 	}
 }
 
-func withTempFilterSet(t *testing.T, fn func(fs *FilterSet, path string)) {
+func withTempOverrides(t *testing.T, fn func(o *Overrides, path string)) {
 	t.Helper()
 	dir := t.TempDir()
-	path := filepath.Join(dir, "filters.bin")
-	fs := NewFilterSet()
-	fn(fs, path)
+	path := filepath.Join(dir, "overrides.bin")
+	o := NewOverrides()
+	fn(o, path)
 }
 
 func makeDNSQueryPacket(domain string) []byte {

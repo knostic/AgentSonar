@@ -10,13 +10,13 @@ import (
 )
 
 func TestKnownAgentFullFlow(t *testing.T) {
-	fs := NewFilterSet()
+	fs := NewOverrides()
 	fs.AddAgent("claude", "claude*", []string{"*.anthropic.com"})
 
 	registry := NewClassifierRegistry()
 	registry.Add(NewDefaultClassifier())
 
-	acc := NewAccumulatorWithFilters(fs, registry)
+	acc := NewAccumulatorWithOverrides(fs, registry)
 
 	event := Event{
 		Timestamp:  time.Now(),
@@ -45,13 +45,13 @@ func TestKnownAgentFullFlow(t *testing.T) {
 }
 
 func TestNonAIFilterFullFlow(t *testing.T) {
-	fs := NewFilterSet()
-	fs.AddNonAIDomain("google.com")
+	fs := NewOverrides()
+	fs.AddNoise("google.com")
 
 	registry := NewClassifierRegistry()
 	registry.Add(NewDefaultClassifier())
 
-	acc := NewAccumulatorWithFilters(fs, registry)
+	acc := NewAccumulatorWithOverrides(fs, registry)
 
 	event := Event{
 		Timestamp: time.Now(),
@@ -68,7 +68,7 @@ func TestNonAIFilterFullFlow(t *testing.T) {
 
 	acc.Record(event)
 
-	if !fs.IsNonAIDomain(event.Domain) {
+	if !fs.IsNoise(event.Domain) {
 		t.Error("domain should be marked as non-AI")
 	}
 
@@ -79,11 +79,11 @@ func TestNonAIFilterFullFlow(t *testing.T) {
 }
 
 func TestUnknownWithAITrafficPattern(t *testing.T) {
-	fs := NewFilterSet()
+	fs := NewOverrides()
 	registry := NewClassifierRegistry()
 	registry.Add(NewDefaultClassifier())
 
-	acc := NewAccumulatorWithFilters(fs, registry)
+	acc := NewAccumulatorWithOverrides(fs, registry)
 
 	for i := 0; i < 10; i++ {
 		event := Event{
@@ -122,18 +122,18 @@ func TestUnknownWithAITrafficPattern(t *testing.T) {
 }
 
 func TestFilterSetPersistenceFullCycle(t *testing.T) {
-	withTempFilterSet(t, func(fs *FilterSet, path string) {
+	withTempOverrides(t, func(fs *Overrides, path string) {
 		fs.AddAgent("openai-agent", "python*", []string{"*.openai.com"})
 		fs.AddAgent("claude-agent", "claude*", []string{"*.anthropic.com", "api.anthropic.com"})
-		fs.AddNonAIDomain("google.com")
-		fs.AddNonAIDomain("apple.com")
-		fs.AddNonAI("Safari", "icloud.com")
+		fs.AddNoise("google.com")
+		fs.AddNoise("apple.com")
+		fs.AddNoise("icloud.com")
 
 		if err := fs.Save(path); err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
 
-		loaded := NewFilterSet()
+		loaded := NewOverrides()
 		if err := loaded.Load(path); err != nil {
 			t.Fatalf("Load failed: %v", err)
 		}
@@ -158,10 +158,10 @@ func TestFilterSetPersistenceFullCycle(t *testing.T) {
 			})
 		}
 
-		if !loaded.IsNonAIDomain("google.com") {
+		if !loaded.IsNoise("google.com") {
 			t.Error("google.com should be non-AI")
 		}
-		if !loaded.IsNonAIDomain("api.apple.com") {
+		if !loaded.IsNoise("api.apple.com") {
 			t.Error("api.apple.com should be non-AI (subdomain)")
 		}
 	})
@@ -189,13 +189,13 @@ func TestEventPersistenceAndReplay(t *testing.T) {
 			t.Fatalf("QueryEvents failed: %v", err)
 		}
 
-		fs := NewFilterSet()
+		fs := NewOverrides()
 		fs.AddAgent("openai", "python*", []string{"*.openai.com"})
 
 		registry := NewClassifierRegistry()
 		registry.Add(NewDefaultClassifier())
 
-		acc := NewAccumulatorWithFilters(fs, registry)
+		acc := NewAccumulatorWithOverrides(fs, registry)
 
 		for _, e := range loaded {
 			acc.Record(e)
@@ -256,7 +256,7 @@ func TestDNSAndTLSCombined(t *testing.T) {
 		t.Errorf("TLS SNI = %q, want %q", ch.SNI, "api.anthropic.com")
 	}
 
-	fs := NewFilterSet()
+	fs := NewOverrides()
 	fs.AddAgent("claude", "claude*", []string{"*.anthropic.com"})
 
 	if fs.MatchAgent("claude-code", domain) != "claude" {

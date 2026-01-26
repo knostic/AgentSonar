@@ -15,20 +15,20 @@ type Accumulator interface {
 }
 
 type PairStats struct {
-	Process         string
-	Domain          string
-	Count           int
-	FirstSeen       time.Time
-	LastSeen        time.Time
-	Sources         map[string]int
-	IsProgrammatic  bool
-	TotalBytesIn    int64
-	TotalBytesOut   int64
-	TotalPacketsIn  int
-	TotalPacketsOut int
-	TotalDurationMs int64
-	MaxConcurrent   int
-	BaseConfidence  Confidence
+	Process         string         `json:"-"`
+	Domain          string         `json:"-"`
+	Count           int            `json:"count"`
+	FirstSeen       time.Time      `json:"-"`
+	LastSeen        time.Time      `json:"-"`
+	Sources         map[string]int `json:"sources"`
+	IsProgrammatic  bool           `json:"is_programmatic"`
+	TotalBytesIn    int64          `json:"bytes_in"`
+	TotalBytesOut   int64          `json:"bytes_out"`
+	TotalPacketsIn  int            `json:"packets_in"`
+	TotalPacketsOut int            `json:"packets_out"`
+	TotalDurationMs int64          `json:"duration_ms"`
+	MaxConcurrent   int            `json:"max_concurrent"`
+	BaseConfidence  Confidence     `json:"-"`
 }
 
 type MemoryAccumulator struct {
@@ -39,7 +39,7 @@ type MemoryAccumulator struct {
 }
 
 func NewAccumulator() *MemoryAccumulator {
-	return NewAccumulatorWithSignals(NewFilterSet(), NewClassifierRegistry())
+	return NewAccumulatorWithSignals(NewOverrides(), NewClassifierRegistry())
 }
 
 func NewAccumulatorWithSignals(signals Signals, registry *ClassifierRegistry) *MemoryAccumulator {
@@ -50,8 +50,8 @@ func NewAccumulatorWithSignals(signals Signals, registry *ClassifierRegistry) *M
 	}
 }
 
-func NewAccumulatorWithFilters(filterSet *FilterSet, registry *ClassifierRegistry) *MemoryAccumulator {
-	return NewAccumulatorWithSignals(filterSet, registry)
+func NewAccumulatorWithOverrides(overrides *Overrides, registry *ClassifierRegistry) *MemoryAccumulator {
+	return NewAccumulatorWithSignals(overrides, registry)
 }
 
 func (a *MemoryAccumulator) Signals() Signals {

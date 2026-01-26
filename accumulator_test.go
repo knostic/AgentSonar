@@ -77,10 +77,10 @@ func TestAccumulatorExtractsExtras(t *testing.T) {
 }
 
 func TestKnownAgentReturnsOne(t *testing.T) {
-	fs := NewFilterSet()
+	fs := NewOverrides()
 	fs.AddAgent("claude", "claude*", []string{"*.anthropic.com"})
 
-	acc := NewAccumulatorWithFilters(fs, NewClassifierRegistry())
+	acc := NewAccumulatorWithOverrides(fs, NewClassifierRegistry())
 
 	event := makeEvent("claude-code", "api.anthropic.com", "tls")
 	acc.Record(event)
@@ -92,10 +92,10 @@ func TestKnownAgentReturnsOne(t *testing.T) {
 }
 
 func TestNonAIReturnsZero(t *testing.T) {
-	fs := NewFilterSet()
-	fs.AddNonAIDomain("google.com")
+	fs := NewOverrides()
+	fs.AddNoise("google.com")
 
-	acc := NewAccumulatorWithFilters(fs, NewClassifierRegistry())
+	acc := NewAccumulatorWithOverrides(fs, NewClassifierRegistry())
 
 	event := makeEvent("chrome", "google.com", "tls")
 	acc.Record(event)
@@ -107,11 +107,11 @@ func TestNonAIReturnsZero(t *testing.T) {
 }
 
 func TestHeuristicScoreFromRegistry(t *testing.T) {
-	fs := NewFilterSet()
+	fs := NewOverrides()
 	registry := NewClassifierRegistry()
 	registry.Add(NewDefaultClassifier())
 
-	acc := NewAccumulatorWithFilters(fs, registry)
+	acc := NewAccumulatorWithOverrides(fs, registry)
 
 	event := makeEventWithExtras("unknown", "api.example.com", map[string]string{
 		"bytes_in":    "100000",
@@ -129,11 +129,11 @@ func TestHeuristicScoreFromRegistry(t *testing.T) {
 }
 
 func TestConfidenceCappedAt099(t *testing.T) {
-	fs := NewFilterSet()
+	fs := NewOverrides()
 	registry := NewClassifierRegistry()
 	registry.Add(&mockClassifier{name: "high", conf: 1.5})
 
-	acc := NewAccumulatorWithFilters(fs, registry)
+	acc := NewAccumulatorWithOverrides(fs, registry)
 
 	event := makeEvent("test", "example.com", "tls")
 	acc.Record(event)

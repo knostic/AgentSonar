@@ -85,17 +85,19 @@ Patterns support:
 - `*.domain.com` - match subdomains
 - `prefix*` - match prefix
 
-Agents are stored in `~/.config/sai/filters.bin` alongside the non-AI bloom filter.
+Agents are stored in `~/.config/sai/overrides.bin`.
 
 ## sai ignore
 
-Add domain to non-AI bloom filter.
+Manage noise domains (known non-AI).
 
 ```bash
-sai ignore <domain>     # add domain to non-AI filter
+sai ignore                  # list noise domains
+sai ignore add <domain>     # add domain to noise list
+sai ignore rm <domain>      # remove domain from noise list
 ```
 
-Ignored domains are filtered from output (unless `-a` flag is used).
+Noise domains and their subdomains are filtered from output (unless `-a` flag is used).
 
 ## sai triage
 
@@ -110,22 +112,22 @@ Shows each unique process:domain pair with computed confidence level.
 Actions:
 - `a` - add as agent (uses process name)
 - `A` - add as agent with prompts to edit name/domain
-- `n` - mark as noise (adds to non-AI bloom filter)
+- `n` - mark as noise (adds domain to noise list)
 - `s` - skip
-- `q` - quit and save filters
+- `q` - quit and save
 
 ## sai sig
 
-Signature management - export/import signatures file.
+Overrides management - export/import overrides file.
 
 ```bash
-sai sig export <file>   # export signatures to file
-sai sig import <file>   # import signatures from file
+sai sig export <file>   # export overrides to file
+sai sig import <file>   # import overrides from file
 ```
 
-Signatures file (`~/.config/sai/filters.bin`) contains:
+Overrides file (`~/.config/sai/overrides.bin`) contains:
 - Named AI agents (process + domain patterns)
-- Non-AI bloom filter (ignored domains)
+- Noise domains list
 
 ## sai classifier
 
@@ -166,8 +168,9 @@ sai doctor
 Checks:
 - BPF access permissions
 - Database accessibility
+- Overrides file
 - Available network interfaces
-- Configured agents and ignore rules
+- Configured agents and noise domains
 - Stored event count
 
 ## sai setup

@@ -1,0 +1,6 @@
+{
+  "name": "domain-scorer",
+  "command": "python3",
+  "args": ["classifier.py"],
+  "timeout_ms": 1000
+}

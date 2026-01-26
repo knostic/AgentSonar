@@ -13,7 +13,7 @@ go get github.com/knostic/sai
 | Component | darwin | linux/windows |
 |-----------|--------|---------------|
 | Monitor | Yes | Stub (returns error) |
-| Signals/FilterSet | Yes | Yes |
+| Signals/Overrides | Yes | Yes |
 | Accumulator | Yes | Yes |
 | Classifiers | Yes | Yes |
 | DB | Yes | No |
@@ -94,16 +94,16 @@ registry.Add(sai.NewDefaultClassifier())
 acc := sai.NewAccumulatorWithSignals(signals, registry)
 ```
 
-### With FilterSet
+### With Overrides
 
 ```go
-filterSet := sai.NewFilterSet()
-filterSet.Import(loadFromStorage())
+overrides := sai.NewOverrides()
+overrides.Import(loadFromStorage())
 
 registry := sai.NewClassifierRegistry()
 registry.Add(sai.NewDefaultClassifier())
 
-acc := sai.NewAccumulatorWithFilters(filterSet, registry)
+acc := sai.NewAccumulatorWithOverrides(overrides, registry)
 ```
 
 ### Custom Accumulator implementation
@@ -130,8 +130,8 @@ func (a *MyAccumulator) Confidence(process, domain string) sai.Confidence {
 
 Confidence is a float64 from 0.0 to 1.0:
 
-- `1.0` - known AI (in AI bloom filter)
-- `0.0` - known noise (in non-AI bloom filter)
+- `1.0` - known AI agent (in overrides)
+- `0.0` - known noise (in overrides)
 - `0.0-0.99` - computed by classifiers for unknown traffic
 
 Traffic heuristics that increase confidence:
@@ -159,7 +159,7 @@ Penalties stack when multiple infrastructure subdomains are present.
 
 ## Signals
 
-Interface for known classifications (process:domain pairs). Implement this for custom storage backends.
+Interface for known classifications. Implement this for custom storage backends.
 
 ```go
 type Signals interface {
@@ -181,7 +181,7 @@ func (s *MySignals) MatchAgent(process, domain string) string {
 }
 
 func (s *MySignals) IsNonAI(process, domain string) bool {
-    // query your database
+    return s.IsNonAIDomain(domain)
 }
 
 func (s *MySignals) IsNonAIDomain(domain string) bool {
@@ -193,38 +193,38 @@ signals := &MySignals{db: myDB}
 acc := sai.NewAccumulatorWithSignals(signals, sai.NewClassifierRegistry())
 ```
 
-## FilterSet
+## Overrides
 
-Reference implementation of `Signals`. Named agents list + non-AI bloom filter.
+Reference implementation of `Signals`. Contains known agents and noise domains.
 
 ```go
-filterSet := sai.NewFilterSet()
+overrides := sai.NewOverrides()
 
 // Load from file
-if sai.FilterFileExists() {
-    filterSet.Load(sai.DefaultFilterPath())
+if sai.OverridesFileExists() {
+    overrides.Load(sai.DefaultOverridesPath())
 }
 
 // Check if traffic matches a known agent
-agentName := filterSet.MatchAgent(process, domain)
+agentName := overrides.MatchAgent(process, domain)
 if agentName != "" {
     // Known AI agent, confidence = 1.0
 }
 
 // Check if traffic is known noise
-if filterSet.IsNonAIDomain(domain) {
+if overrides.IsNoise(domain) {
     // Known noise, confidence = 0.0
 }
 
 // Add agent
-filterSet.AddAgent("cursor", "cursor", []string{"*.anthropic.com"})
-filterSet.AddAgentDomain("cursor", "*.openai.com")
+overrides.AddAgent("cursor", "cursor", []string{"*.anthropic.com"})
+overrides.AddAgentDomain("cursor", "*.openai.com")
 
-// Add to non-AI filter
-filterSet.AddNonAIDomain("example.com")
+// Add noise domain
+overrides.AddNoise("example.com")
 
 // Save to file
-filterSet.Save(sai.DefaultFilterPath())
+overrides.Save(sai.DefaultOverridesPath())
 ```
 
 ### Export/Import
@@ -233,17 +233,17 @@ For custom storage backends, use `Export()` and `Import()` instead of file-based
 
 ```go
 // Export to your storage
-data := filterSet.Export()
+data := overrides.Export()
 saveToRedis(data)  // or database, S3, etc.
 
 // Import from your storage
-loaded := sai.NewFilterSet()
+loaded := sai.NewOverrides()
 loaded.Import(loadFromRedis())
 ```
 
-`FilterSetData` contains:
-- `Agents` - list of `FilterAgent{Name, Process, Domains}`
-- `IgnoredDomains` - list of non-AI domain strings
+`OverridesData` contains:
+- `Agents` - list of `Agent{Name, Process, Domains}`
+- `Noise` - list of noise domain strings
 
 ## ClassifierRegistry
 

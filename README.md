@@ -25,9 +25,9 @@ sai -a                  # all domains, not just AI
 sai -j                  # JSON output
 sai events --since 1h   # query stored events
 sai agents              # list known agents
-sai ignore              # list/add/remove ignore rules
+sai ignore              # list/add/remove noise domains
 sai triage              # classify unknown events
-sai sig                 # import/export bloom filters
+sai sig                 # import/export overrides
 sai classifier          # manage external classifiers
 sai doctor              # check system health
 sai setup               # setup BPF permissions
@@ -45,17 +45,18 @@ for event := range mon.Events() {
     fmt.Printf("%s -> %s\n", event.Process, event.Domain)
 }
 
-// Signals and classifiers work cross-platform
-signals := sai.NewFilterSet()
-signals.AddAgent("claude", "claude*", []string{"*.anthropic.com"})
-acc := sai.NewAccumulatorWithSignals(signals, sai.NewClassifierRegistry())
+// Overrides and classifiers work cross-platform
+overrides := sai.NewOverrides()
+overrides.AddAgent("claude", "claude*", []string{"*.anthropic.com"})
+overrides.AddNoise("google.com")
+acc := sai.NewAccumulatorWithOverrides(overrides, sai.NewClassifierRegistry())
 ```
 
 ### Examples
 
 ```bash
 go run ./examples/custom_signals   # custom Signals implementation
-go run ./examples/export_import    # FilterSet serialization
+go run ./examples/export_import    # Overrides serialization
 go run ./examples/basic_monitor    # simple monitoring (darwin)
 go run ./examples/full_monitor     # full monitoring with accumulator (darwin)
 ```
