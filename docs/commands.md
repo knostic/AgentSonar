@@ -1,5 +1,21 @@
 # Commands
 
+## Prerequisites
+
+Packet capture requires elevated permissions:
+
+**macOS** - BPF device access:
+```bash
+sudo chgrp admin /dev/bpf* && sudo chmod g+rw /dev/bpf*
+```
+
+**Linux** - either run as root, or grant capabilities:
+```bash
+sudo setcap cap_net_raw,cap_net_admin=eip /path/to/sai
+```
+
+Run `sai doctor` to verify permissions, or `sai setup` for setup instructions.
+
 ## sai
 
 Live monitoring - streams events to stdout.
