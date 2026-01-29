@@ -32,6 +32,7 @@ type Overrides struct {
 	mu          sync.RWMutex
 	path        string
 	modTime     int64
+	size        int64
 }
 
 func NewOverrides() *Overrides {
@@ -276,6 +277,7 @@ func (o *Overrides) loadLocked(path string) error {
 	o.classifiers = data.Classifiers
 	o.path = path
 	o.modTime = info.ModTime().UnixNano()
+	o.size = info.Size()
 	return nil
 }
 
@@ -292,7 +294,7 @@ func (o *Overrides) reloadIfChanged() {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
-	if info.ModTime().UnixNano() != o.modTime {
+	if info.ModTime().UnixNano() != o.modTime || info.Size() != o.size {
 		o.loadLocked(o.path)
 	}
 }
