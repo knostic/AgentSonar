@@ -11,7 +11,7 @@ sudo make install
 
 BPF permissions (macOS):
 ```bash
-sudo chgrp admin /dev/bpf* && sudo chmod g+rw /dev/bpf*
+sai install
 ```
 
 ## Usage

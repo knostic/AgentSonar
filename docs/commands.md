@@ -6,7 +6,7 @@ Packet capture requires elevated permissions:
 
 **macOS** - BPF device access:
 ```bash
-sudo chgrp admin /dev/bpf* && sudo chmod g+rw /dev/bpf*
+sai install
 ```
 
 **Linux** - either run as root, or grant capabilities:
@@ -202,6 +202,35 @@ Checks:
 - Available network interfaces
 - Configured agents and noise domains
 - Stored event count
+
+## sai install
+
+Setup BPF permissions for packet capture. Exits non-zero if not configured.
+
+```bash
+sai install
+```
+
+On macOS:
+1. Creates `access_bpf` group (if needed)
+2. Adds current user to the group
+3. Sets `/dev/bpf*` device permissions
+4. Optionally installs LaunchDaemon to persist permissions across reboots (only offered for fresh installs)
+
+Log out and back in for group membership to take effect.
+
+## sai uninstall
+
+Remove BPF permissions.
+
+```bash
+sai uninstall
+```
+
+- Removes LaunchDaemon if installed
+- Removes current user from the `access_bpf` group
+
+Log out and back in for changes to take effect.
 
 ## sai setup
 

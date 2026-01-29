@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"os/user"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"syscall"
@@ -59,6 +61,8 @@ func init() {
 	)
 
 	setupCmd.GroupID = "system"
+	installCmd.GroupID = "system"
+	uninstallCmd.GroupID = "system"
 	doctorCmd.GroupID = "system"
 
 	startCmd.GroupID = "daemon"
@@ -75,6 +79,8 @@ func init() {
 	classifierCmd.GroupID = "config"
 
 	rootCmd.AddCommand(setupCmd)
+	rootCmd.AddCommand(installCmd)
+	rootCmd.AddCommand(uninstallCmd)
 	rootCmd.AddCommand(doctorCmd)
 	rootCmd.AddCommand(startCmd)
 	rootCmd.AddCommand(stopCmd)
@@ -307,9 +313,25 @@ func init() {
 
 var setupCmd = &cobra.Command{
 	Use:   "setup",
-	Short: "Interactive BPF setup (macOS)",
+	Short: "Show BPF setup instructions (macOS)",
 	Run: func(cmd *cobra.Command, args []string) {
 		runSetup()
+	},
+}
+
+var installCmd = &cobra.Command{
+	Use:   "install",
+	Short: "Setup BPF permissions for packet capture",
+	Run: func(cmd *cobra.Command, args []string) {
+		runInstall()
+	},
+}
+
+var uninstallCmd = &cobra.Command{
+	Use:   "uninstall",
+	Short: "Remove BPF permissions",
+	Run: func(cmd *cobra.Command, args []string) {
+		runUninstall()
 	},
 }
 
@@ -322,6 +344,12 @@ var doctorCmd = &cobra.Command{
 }
 
 func runMonitor(cmd *cobra.Command) {
+	if runtime.GOOS == "darwin" && !userInGroup(os.Getenv("USER"), bpfGroup) {
+		fmt.Fprintf(os.Stderr, "error: user not in %s group\n", bpfGroup)
+		fmt.Fprintln(os.Stderr, "hint: run 'sai install' to configure BPF permissions")
+		os.Exit(1)
+	}
+
 	allDomains, _ := cmd.Flags().GetBool("all")
 	jsonOutput, _ := cmd.Flags().GetBool("json")
 	iface, _ := cmd.Flags().GetString("interface")
@@ -349,7 +377,7 @@ func runMonitor(cmd *cobra.Command) {
 
 	if err := mon.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		fmt.Fprintln(os.Stderr, "hint: run 'sai setup' to configure BPF permissions")
+		fmt.Fprintln(os.Stderr, "hint: run 'sai install' to configure BPF permissions")
 		os.Exit(1)
 	}
 	defer mon.Stop()
@@ -780,12 +808,292 @@ func runSetup() {
 	fmt.Println("sai setup - BPF permissions for macOS")
 	fmt.Println()
 	fmt.Println("To capture network traffic, sai needs BPF access.")
-	fmt.Println("Run the following commands:")
 	fmt.Println()
-	fmt.Println("  sudo chgrp admin /dev/bpf*")
+	fmt.Println("Run: sai install")
+	fmt.Println()
+	fmt.Println("Or manually:")
+	fmt.Println("  # Create access_bpf group and add yourself")
+	fmt.Println("  sudo dseditgroup -o create access_bpf")
+	fmt.Println("  sudo dseditgroup -o edit -a $USER -t user access_bpf")
+	fmt.Println()
+	fmt.Println("  # Set BPF device permissions")
+	fmt.Println("  sudo chgrp access_bpf /dev/bpf*")
 	fmt.Println("  sudo chmod g+rw /dev/bpf*")
 	fmt.Println()
-	fmt.Println("Or install Wireshark which sets up BPF permissions automatically.")
+	fmt.Println("Log out and back in for group membership to take effect.")
+}
+
+func runInstall() {
+	if checkBPF() {
+		fmt.Println("BPF access: ok")
+		fmt.Println("sai is ready to use.")
+		return
+	}
+
+	// macOS-specific setup
+	if strings.Contains(strings.ToLower(os.Getenv("OSTYPE")), "darwin") || isDarwin() {
+		runInstallDarwin()
+		return
+	}
+
+	fmt.Println("BPF access: FAIL")
+	fmt.Println()
+	fmt.Println("Linux: run as root, or grant capabilities:")
+	fmt.Println("  sudo setcap cap_net_raw,cap_net_admin=eip /path/to/sai")
+	os.Exit(1)
+}
+
+func isDarwin() bool {
+	out, err := exec.Command("uname", "-s").Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "Darwin"
+}
+
+const (
+	bpfGroup      = "access_bpf"
+	bpfPlist      = "/Library/LaunchDaemons/com.knostic.sai.chmodbpf.plist"
+	bpfSupportDir = "/Library/Application Support/Sai"
+	bpfScript     = "/Library/Application Support/Sai/ChmodBPF"
+)
+
+func bpfHasGroupAccess() bool {
+	info, err := os.Stat("/dev/bpf0")
+	if err != nil {
+		return false
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return false
+	}
+	grp, err := user.LookupGroupId(fmt.Sprintf("%d", stat.Gid))
+	if err != nil {
+		return false
+	}
+	return grp.Name == bpfGroup && info.Mode().Perm()&0060 == 0060
+}
+
+func groupExists(name string) bool {
+	return exec.Command("dscl", ".", "-read", "/Groups/"+name).Run() == nil
+}
+
+func createGroup(name string) error {
+	gid := findFreeGID()
+	if err := sudoRun("dscl", ".", "-create", "/Groups/"+name); err != nil {
+		return err
+	}
+	return sudoRun("dscl", ".", "-create", "/Groups/"+name, "PrimaryGroupID", fmt.Sprintf("%d", gid))
+}
+
+func setBPFPermissions() error {
+	if err := sudoRun("sh", "-c", "chgrp "+bpfGroup+" /dev/bpf*"); err != nil {
+		return err
+	}
+	return sudoRun("sh", "-c", "chmod g+rw /dev/bpf*")
+}
+
+func userInGroup(username, group string) bool {
+	out, err := exec.Command("id", "-Gn", username).Output()
+	if err != nil {
+		return false
+	}
+	for _, g := range strings.Fields(string(out)) {
+		if g == group {
+			return true
+		}
+	}
+	return false
+}
+
+func addUserToGroup(username, group string) error {
+	return sudoRun("dseditgroup", "-o", "edit", "-a", username, "-t", "user", group)
+}
+
+func runInstallDarwin() {
+	user := os.Getenv("USER")
+	if user == "" {
+		fmt.Fprintln(os.Stderr, "error: USER not set")
+		os.Exit(1)
+	}
+
+	needLogout := false
+
+	// Step 1: Check BPF device permissions
+	if bpfHasGroupAccess() {
+		fmt.Printf("BPF devices: accessible by %s\n", bpfGroup)
+	} else {
+		// Step 2: Ensure group exists
+		if groupExists(bpfGroup) {
+			fmt.Printf("Group %s: exists\n", bpfGroup)
+		} else {
+			fmt.Printf("Group %s: creating...\n", bpfGroup)
+			if err := createGroup(bpfGroup); err != nil {
+				fmt.Fprintf(os.Stderr, "error creating group: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Group %s: created\n", bpfGroup)
+		}
+
+		// Step 3: Add admin as nested group (Wireshark's approach)
+		fmt.Println("Adding admin group to access_bpf...")
+		if err := addAdminGroupToGroup(bpfGroup); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not add admin group: %v\n", err)
+		}
+
+		// Step 4: Set BPF permissions
+		fmt.Println("BPF devices: setting permissions...")
+		if err := setBPFPermissions(); err != nil {
+			fmt.Fprintf(os.Stderr, "\nerror setting BPF permissions: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("BPF devices: accessible by %s\n", bpfGroup)
+	}
+
+	// Step 5: Check/add user to group
+	if userInGroup(user, bpfGroup) {
+		fmt.Printf("User %s: in %s\n", user, bpfGroup)
+	} else {
+		fmt.Printf("User %s: adding to %s...\n", user, bpfGroup)
+		if err := addUserToGroup(user, bpfGroup); err != nil {
+			fmt.Fprintf(os.Stderr, "error adding user to group: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("User %s: added to %s\n", user, bpfGroup)
+		needLogout = true
+	}
+
+	// Step 6: Offer LaunchDaemon
+	if !launchDaemonExists() {
+		fmt.Println()
+		fmt.Print("Install LaunchDaemon to persist permissions across reboots? [y/N] ")
+		reader := bufio.NewReader(os.Stdin)
+		reply, _ := reader.ReadString('\n')
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(reply)), "y") {
+			installLaunchDaemon()
+		}
+	}
+
+	if needLogout {
+		fmt.Println("\nLog out and back in for group membership to take effect.")
+	}
+}
+
+func installLaunchDaemon() {
+	// Find the ChmodBPF script in the same directory as the executable
+	exePath, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error finding executable: %v\n", err)
+		return
+	}
+	scriptSrc := filepath.Join(filepath.Dir(exePath), "..", "scripts", "ChmodBPF")
+	plistSrc := filepath.Join(filepath.Dir(exePath), "..", "scripts", "com.knostic.sai.chmodbpf.plist")
+
+	// Try current working directory if not found
+	if _, err := os.Stat(scriptSrc); os.IsNotExist(err) {
+		scriptSrc = "scripts/ChmodBPF"
+		plistSrc = "scripts/com.knostic.sai.chmodbpf.plist"
+	}
+
+	if _, err := os.Stat(scriptSrc); os.IsNotExist(err) {
+		fmt.Println("LaunchDaemon scripts not found. Skipping.")
+		return
+	}
+
+	fmt.Println("Installing LaunchDaemon...")
+	if err := sudoRun("mkdir", "-p", bpfSupportDir); err != nil {
+		fmt.Fprintf(os.Stderr, "error creating support dir: %v\n", err)
+		return
+	}
+	if err := sudoRun("cp", scriptSrc, bpfScript); err != nil {
+		fmt.Fprintf(os.Stderr, "error copying script: %v\n", err)
+		return
+	}
+	if err := sudoRun("chmod", "755", bpfScript); err != nil {
+		fmt.Fprintf(os.Stderr, "error setting script permissions: %v\n", err)
+		return
+	}
+	if err := sudoRun("chown", "root:wheel", bpfScript); err != nil {
+		fmt.Fprintf(os.Stderr, "error setting script owner: %v\n", err)
+		return
+	}
+	if err := sudoRun("cp", plistSrc, bpfPlist); err != nil {
+		fmt.Fprintf(os.Stderr, "error copying plist: %v\n", err)
+		return
+	}
+	if err := sudoRun("chown", "root:wheel", bpfPlist); err != nil {
+		fmt.Fprintf(os.Stderr, "error setting plist owner: %v\n", err)
+		return
+	}
+	if err := sudoRun("chmod", "644", bpfPlist); err != nil {
+		fmt.Fprintf(os.Stderr, "error setting plist permissions: %v\n", err)
+		return
+	}
+	_ = exec.Command("sudo", "launchctl", "bootout", "system", bpfPlist).Run()
+	if err := sudoRun("launchctl", "bootstrap", "system", bpfPlist); err != nil {
+		fmt.Fprintf(os.Stderr, "error loading LaunchDaemon: %v\n", err)
+		return
+	}
+	fmt.Println("LaunchDaemon installed.")
+}
+
+func findFreeGID() int {
+	gid := 100
+	for {
+		out, err := exec.Command("dscl", ".", "-search", "/Groups", "PrimaryGroupID", fmt.Sprintf("%d", gid)).Output()
+		if err != nil || len(strings.TrimSpace(string(out))) == 0 {
+			return gid
+		}
+		gid++
+	}
+}
+
+func launchDaemonExists() bool {
+	_, err := os.Stat(bpfPlist)
+	return err == nil
+}
+
+func addAdminGroupToGroup(group string) error {
+	return sudoRun("dseditgroup", "-o", "edit", "-a", "admin", "-t", "group", group)
+}
+
+func sudoRun(name string, args ...string) error {
+	cmd := exec.Command("sudo", append([]string{name}, args...)...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func runUninstall() {
+	if !isDarwin() {
+		fmt.Println("Uninstall is only supported on macOS.")
+		fmt.Println("On Linux, remove the setcap capabilities manually.")
+		os.Exit(1)
+	}
+
+	// Step 1: Unload LaunchDaemon (use bootout, not unload)
+	if launchDaemonExists() {
+		fmt.Println("Removing LaunchDaemon...")
+		_ = exec.Command("sudo", "launchctl", "bootout", "system", bpfPlist).Run()
+		_ = sudoRun("rm", "-f", bpfPlist)
+		_ = sudoRun("rm", "-rf", bpfSupportDir)
+		fmt.Println("LaunchDaemon: removed")
+	}
+
+	// Step 2: Delete the entire access_bpf group (like Wireshark)
+	if groupExists(bpfGroup) {
+		fmt.Printf("Group %s: deleting...\n", bpfGroup)
+		if err := sudoRun("dseditgroup", "-o", "delete", bpfGroup); err != nil {
+			fmt.Fprintf(os.Stderr, "error deleting group: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Group %s: deleted\n", bpfGroup)
+	} else {
+		fmt.Printf("Group %s: not found\n", bpfGroup)
+	}
+
+	fmt.Println("\nBPF access removed. Permissions will reset on next reboot.")
 }
 
 func runDoctor() {

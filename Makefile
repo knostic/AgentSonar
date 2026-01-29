@@ -23,8 +23,5 @@ test:
 tidy:
 	go mod tidy
 
-setup-bpf:
-	@echo "Setting up BPF permissions for macOS..."
-	sudo chgrp admin /dev/bpf*
-	sudo chmod g+rw /dev/bpf*
-	@echo "Done. You may need to restart your terminal."
+setup-bpf: build
+	@./bin/sai install

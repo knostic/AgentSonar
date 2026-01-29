@@ -1,0 +1,22 @@
+#!/bin/zsh
+
+BPF_GROUP="access_bpf"
+FORCE_CREATE_BPF_MAX=256
+
+SYSCTL_MAX=$( sysctl -n debug.bpf_maxdevices 2>/dev/null )
+if [ -z "$SYSCTL_MAX" ] || [ "$FORCE_CREATE_BPF_MAX" -gt "$SYSCTL_MAX" ]; then
+    FORCE_CREATE_BPF_MAX=${SYSCTL_MAX:-256}
+fi
+
+syslog -s -l notice "ChmodBPF: pre-creating /dev/bpf0-$(( FORCE_CREATE_BPF_MAX - 1 ))"
+
+CUR_DEV=0
+while [ "$CUR_DEV" -lt "$FORCE_CREATE_BPF_MAX" ]; do
+    read -r -n 0 < /dev/bpf$CUR_DEV > /dev/null 2>&1
+    CUR_DEV=$(( CUR_DEV + 1 ))
+done
+
+chgrp $BPF_GROUP /dev/bpf*
+chmod g+rw /dev/bpf*
+
+syslog -s -l notice "ChmodBPF: done"
