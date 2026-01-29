@@ -4,15 +4,37 @@ Detect shadow AI on your machine by tracking which processes call AI-related dom
 
 ## Install
 
+Download the binary for your platform from [Releases](https://github.com/knostic/shadow_ai/releases).
+
+To build from source, see [docs/development.md](docs/development.md).
+
+### Runtime Dependencies
+
+**macOS:** None.
+
+**Debian/Ubuntu:**
 ```bash
-make build
-sudo make install
+apt-get install libpcap0.8 libcap2-bin
 ```
 
-BPF permissions (macOS):
+**Fedora/RHEL:**
+```bash
+dnf install libpcap libcap
+```
+
+### Permissions
+
 ```bash
 sai install
 ```
+
+This sets up packet capture permissions:
+- **macOS:** Creates `access_bpf` group, sets BPF device permissions
+- **Linux:** Sets `cap_net_raw,cap_net_admin` capabilities on the binary
+
+### Containers
+
+When running in Docker/Kubernetes, PID lookup may fail due to namespace isolation (e.g., `curl` requests won't appear). Use `--enable-pid0` to capture all traffic regardless of PID resolution.
 
 ## Usage
 
@@ -23,6 +45,7 @@ sai stop                # stop daemon
 sai status              # check if daemon is running
 sai -a                  # all domains, not just AI
 sai -j                  # JSON output
+sai --enable-pid0       # include events where PID lookup fails
 sai events --since 1h   # query stored events
 sai agents              # list known agents
 sai ignore              # list/add/remove noise domains

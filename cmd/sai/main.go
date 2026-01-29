@@ -45,10 +45,17 @@ var (
 	monitorEnablePID0 bool
 )
 
+func defaultInterface() string {
+	if runtime.GOOS == "darwin" {
+		return "en0"
+	}
+	return "eth0"
+}
+
 func init() {
 	rootCmd.Flags().SortFlags = false
 
-	rootCmd.Flags().StringVarP(&monitorIface, "interface", "i", "en0", "network interface")
+	rootCmd.Flags().StringVarP(&monitorIface, "interface", "i", defaultInterface(), "network interface")
 	rootCmd.Flags().BoolVarP(&monitorJSON, "json", "j", false, "JSON lines output")
 	rootCmd.Flags().BoolVarP(&monitorAll, "all", "a", false, "show all events (bypass filters)")
 	rootCmd.Flags().BoolVar(&monitorEnablePID0, "enable-pid0", false, "include PID 0")
@@ -129,7 +136,7 @@ var startCmd = &cobra.Command{
 
 func init() {
 	startCmd.Flags().SortFlags = false
-	startCmd.Flags().StringP("interface", "i", "en0", "network interface")
+	startCmd.Flags().StringP("interface", "i", defaultInterface(), "network interface")
 	startCmd.Flags().BoolP("json", "j", false, "JSON lines output")
 	startCmd.Flags().BoolP("all", "a", false, "show all events (bypass filters)")
 	startCmd.Flags().Bool("enable-pid0", false, "include PID 0")
@@ -321,7 +328,7 @@ var setupCmd = &cobra.Command{
 
 var installCmd = &cobra.Command{
 	Use:   "install",
-	Short: "Setup BPF permissions for packet capture",
+	Short: "Setup permissions for packet capture",
 	Run: func(cmd *cobra.Command, args []string) {
 		runInstall()
 	},
@@ -329,7 +336,7 @@ var installCmd = &cobra.Command{
 
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall",
-	Short: "Remove BPF permissions",
+	Short: "Remove capture permissions",
 	Run: func(cmd *cobra.Command, args []string) {
 		runUninstall()
 	},
@@ -377,7 +384,7 @@ func runMonitor(cmd *cobra.Command) {
 
 	if err := mon.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		fmt.Fprintln(os.Stderr, "hint: run 'sai install' to configure BPF permissions")
+		fmt.Fprintln(os.Stderr, "hint: run 'sai install' to configure capture permissions")
 		os.Exit(1)
 	}
 	defer mon.Stop()
@@ -830,25 +837,15 @@ func runInstall() {
 		return
 	}
 
-	// macOS-specific setup
-	if strings.Contains(strings.ToLower(os.Getenv("OSTYPE")), "darwin") || isDarwin() {
+	switch runtime.GOOS {
+	case "darwin":
 		runInstallDarwin()
-		return
+	case "linux":
+		runInstallLinux()
+	default:
+		fmt.Fprintf(os.Stderr, "error: unsupported OS: %s\n", runtime.GOOS)
+		os.Exit(1)
 	}
-
-	fmt.Println("BPF access: FAIL")
-	fmt.Println()
-	fmt.Println("Linux: run as root, or grant capabilities:")
-	fmt.Println("  sudo setcap cap_net_raw,cap_net_admin=eip /path/to/sai")
-	os.Exit(1)
-}
-
-func isDarwin() bool {
-	out, err := exec.Command("uname", "-s").Output()
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(string(out)) == "Darwin"
 }
 
 const (
@@ -856,6 +853,7 @@ const (
 	bpfPlist      = "/Library/LaunchDaemons/com.knostic.sai.chmodbpf.plist"
 	bpfSupportDir = "/Library/Application Support/Sai"
 	bpfScript     = "/Library/Application Support/Sai/ChmodBPF"
+	linuxGroup    = "sai"
 )
 
 func bpfHasGroupAccess() bool {
@@ -911,19 +909,12 @@ func addUserToGroup(username, group string) error {
 }
 
 func runInstallDarwin() {
-	user := os.Getenv("USER")
-	if user == "" {
-		fmt.Fprintln(os.Stderr, "error: USER not set")
-		os.Exit(1)
-	}
-
+	username := currentUser()
 	needLogout := false
 
-	// Step 1: Check BPF device permissions
 	if bpfHasGroupAccess() {
 		fmt.Printf("BPF devices: accessible by %s\n", bpfGroup)
 	} else {
-		// Step 2: Ensure group exists
 		if groupExists(bpfGroup) {
 			fmt.Printf("Group %s: exists\n", bpfGroup)
 		} else {
@@ -935,13 +926,11 @@ func runInstallDarwin() {
 			fmt.Printf("Group %s: created\n", bpfGroup)
 		}
 
-		// Step 3: Add admin as nested group (Wireshark's approach)
 		fmt.Println("Adding admin group to access_bpf...")
 		if err := addAdminGroupToGroup(bpfGroup); err != nil {
 			fmt.Fprintf(os.Stderr, "warning: could not add admin group: %v\n", err)
 		}
 
-		// Step 4: Set BPF permissions
 		fmt.Println("BPF devices: setting permissions...")
 		if err := setBPFPermissions(); err != nil {
 			fmt.Fprintf(os.Stderr, "\nerror setting BPF permissions: %v\n", err)
@@ -950,16 +939,15 @@ func runInstallDarwin() {
 		fmt.Printf("BPF devices: accessible by %s\n", bpfGroup)
 	}
 
-	// Step 5: Check/add user to group
-	if userInGroup(user, bpfGroup) {
-		fmt.Printf("User %s: in %s\n", user, bpfGroup)
+	if userInGroup(username, bpfGroup) {
+		fmt.Printf("User %s: in %s\n", username, bpfGroup)
 	} else {
-		fmt.Printf("User %s: adding to %s...\n", user, bpfGroup)
-		if err := addUserToGroup(user, bpfGroup); err != nil {
+		fmt.Printf("User %s: adding to %s...\n", username, bpfGroup)
+		if err := addUserToGroup(username, bpfGroup); err != nil {
 			fmt.Fprintf(os.Stderr, "error adding user to group: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Printf("User %s: added to %s\n", user, bpfGroup)
+		fmt.Printf("User %s: added to %s\n", username, bpfGroup)
 		needLogout = true
 	}
 
@@ -1058,21 +1046,97 @@ func addAdminGroupToGroup(group string) error {
 }
 
 func sudoRun(name string, args ...string) error {
-	cmd := exec.Command("sudo", append([]string{name}, args...)...)
+	var cmd *exec.Cmd
+	if os.Getuid() == 0 {
+		cmd = exec.Command(name, args...)
+	} else {
+		cmd = exec.Command("sudo", append([]string{name}, args...)...)
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
-func runUninstall() {
-	if !isDarwin() {
-		fmt.Println("Uninstall is only supported on macOS.")
-		fmt.Println("On Linux, remove the setcap capabilities manually.")
-		os.Exit(1)
+func currentUser() string {
+	if u := os.Getenv("USER"); u != "" {
+		return u
+	}
+	if u, err := user.Current(); err == nil {
+		return u.Username
+	}
+	fmt.Fprintln(os.Stderr, "error: could not determine current user")
+	os.Exit(1)
+	return ""
+}
+
+func runInstallLinux() {
+	username := currentUser()
+	binary, _ := os.Executable()
+
+	if !groupExistsLinux(linuxGroup) {
+		fmt.Printf("Group %s: creating...\n", linuxGroup)
+		if err := sudoRun("groupadd", "--system", linuxGroup); err != nil {
+			fmt.Fprintf(os.Stderr, "error creating group: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Group %s: created\n", linuxGroup)
+	} else {
+		fmt.Printf("Group %s: exists\n", linuxGroup)
 	}
 
-	// Step 1: Unload LaunchDaemon (use bootout, not unload)
+	fmt.Printf("Binary: setting ownership to root:%s...\n", linuxGroup)
+	_ = sudoRun("chown", "root:"+linuxGroup, binary)
+
+	fmt.Println("Binary: setting capabilities...")
+	if err := sudoRun("setcap", "cap_net_raw,cap_net_admin=eip", binary); err != nil {
+		fmt.Println("setcap failed, falling back to setuid...")
+		_ = sudoRun("chmod", "u=rwxs,g=rx,o=r", binary)
+	} else {
+		_ = sudoRun("chmod", "u=rwx,g=rx,o=r", binary)
+		fmt.Println("Binary: capabilities set")
+	}
+
+	if !userInGroupLinux(username, linuxGroup) {
+		fmt.Printf("User %s: adding to %s...\n", username, linuxGroup)
+		_ = sudoRun("usermod", "-a", "-G", linuxGroup, username)
+		fmt.Printf("User %s: added to %s\n", username, linuxGroup)
+		fmt.Println("\nLog out and back in for group membership to take effect.")
+	} else {
+		fmt.Printf("User %s: in %s\n", username, linuxGroup)
+	}
+}
+
+func groupExistsLinux(name string) bool {
+	return exec.Command("getent", "group", name).Run() == nil
+}
+
+func userInGroupLinux(user, group string) bool {
+	out, err := exec.Command("id", "-nG", user).Output()
+	if err != nil {
+		return false
+	}
+	for _, g := range strings.Fields(string(out)) {
+		if g == group {
+			return true
+		}
+	}
+	return false
+}
+
+func runUninstall() {
+	switch runtime.GOOS {
+	case "darwin":
+		runUninstallDarwin()
+	case "linux":
+		runUninstallLinux()
+	default:
+		fmt.Fprintf(os.Stderr, "error: unsupported OS: %s\n", runtime.GOOS)
+		os.Exit(1)
+	}
+}
+
+func runUninstallDarwin() {
 	if launchDaemonExists() {
 		fmt.Println("Removing LaunchDaemon...")
 		_ = exec.Command("sudo", "launchctl", "bootout", "system", bpfPlist).Run()
@@ -1081,7 +1145,6 @@ func runUninstall() {
 		fmt.Println("LaunchDaemon: removed")
 	}
 
-	// Step 2: Delete the entire access_bpf group (like Wireshark)
 	if groupExists(bpfGroup) {
 		fmt.Printf("Group %s: deleting...\n", bpfGroup)
 		if err := sudoRun("dseditgroup", "-o", "delete", bpfGroup); err != nil {
@@ -1094,6 +1157,29 @@ func runUninstall() {
 	}
 
 	fmt.Println("\nBPF access removed. Permissions will reset on next reboot.")
+}
+
+func runUninstallLinux() {
+	binary, _ := os.Executable()
+
+	fmt.Println("Binary: removing capabilities...")
+	_ = sudoRun("setcap", "-r", binary)
+
+	_ = sudoRun("chmod", "755", binary)
+	_ = sudoRun("chown", "root:root", binary)
+
+	if groupExistsLinux(linuxGroup) {
+		fmt.Printf("Group %s: deleting...\n", linuxGroup)
+		if err := sudoRun("groupdel", linuxGroup); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not delete group: %v\n", err)
+		} else {
+			fmt.Printf("Group %s: deleted\n", linuxGroup)
+		}
+	} else {
+		fmt.Printf("Group %s: not found\n", linuxGroup)
+	}
+
+	fmt.Println("\nCapabilities removed.")
 }
 
 func runDoctor() {
@@ -1199,7 +1285,7 @@ func runStart(cmd *cobra.Command) {
 	if jsonOut, _ := cmd.Flags().GetBool("json"); jsonOut {
 		args = append(args, "-j")
 	}
-	if iface, _ := cmd.Flags().GetString("interface"); iface != "en0" {
+	if iface, _ := cmd.Flags().GetString("interface"); iface != defaultInterface() {
 		args = append(args, "-i", iface)
 	}
 	if enablePID0, _ := cmd.Flags().GetBool("enable-pid0"); enablePID0 {

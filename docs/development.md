@@ -3,7 +3,21 @@
 ## Requirements
 
 - Go 1.21+
-- macOS (network monitoring uses BPF)
+- macOS or Linux
+
+### Build Dependencies
+
+**Debian/Ubuntu:**
+```bash
+apt-get install libpcap-dev
+```
+
+**Fedora/RHEL:**
+```bash
+dnf install libpcap-devel
+```
+
+**macOS:** No additional packages required.
 
 ## Setup
 
@@ -13,38 +27,37 @@ cd sai
 go mod download
 ```
 
-### BPF Permissions
-
-Packet capture requires access to `/dev/bpf*` devices. On macOS, this is controlled via group membership.
+### Packet Capture Permissions
 
 **Automated setup:**
 ```bash
 sai install
 ```
 
-The command will:
-1. Create the `access_bpf` group (if needed)
-2. Add your user to the group
-3. Set `/dev/bpf*` permissions
+#### macOS
+
+Creates `access_bpf` group and sets `/dev/bpf*` permissions.
 
 **Manual setup:**
 ```bash
-# Create access_bpf group
 sudo dseditgroup -o create access_bpf
-
-# Add yourself to the group
 sudo dseditgroup -o edit -a $USER -t user access_bpf
-
-# Set device permissions
 sudo chgrp access_bpf /dev/bpf*
 sudo chmod g+rw /dev/bpf*
 ```
 
-Log out and back in for group membership to take effect.
-
-**Persistence across reboots:**
-
 BPF device permissions reset on reboot. See `scripts/` for a LaunchDaemon that restores them automatically.
+
+#### Linux
+
+Sets capabilities on the binary. Requires `libcap2-bin` (Debian/Ubuntu) or `libcap` (Fedora/RHEL) for `setcap`.
+
+**Manual setup:**
+```bash
+sudo setcap cap_net_raw,cap_net_admin=eip /path/to/sai
+```
+
+Log out and back in for group membership to take effect.
 
 Run `sai doctor` to verify permissions.
 

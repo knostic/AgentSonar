@@ -8,7 +8,15 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            install: sudo apt-get update && sudo apt-get install -y libpcap-dev
+          - os: macos-latest
+            install: brew install libpcap
+
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -18,7 +26,7 @@ jobs:
           go-version: "1.24"
 
       - name: Install libpcap
-        run: sudo apt-get update && sudo apt-get install -y libpcap-dev
+        run: ${{ matrix.install }}
 
       - name: Run tests
         run: make test
