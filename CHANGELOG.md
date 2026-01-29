@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/knostic/shadow_ai/compare/v1.1.1...v1.1.2) (2026-01-29)
+
+
+### Bug Fixes
+
+* macos releases ([8306e61](https://github.com/knostic/shadow_ai/commit/8306e612d7f537c2b478231e87395a8a86764f7a))
+
 ## [1.1.1](https://github.com/knostic/shadow_ai/compare/v1.1.0...v1.1.1) (2026-01-29)
 
 
