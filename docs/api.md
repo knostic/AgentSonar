@@ -16,7 +16,7 @@ go get github.com/knostic/sai
 | Signals/Overrides | Yes | Yes |
 | Accumulator | Yes | Yes |
 | Classifiers | Yes | Yes |
-| DB | Yes | No |
+| DB | Yes | Yes |
 
 ## Monitor
 
@@ -53,20 +53,20 @@ type Event struct {
     Source     string            // tls, dns, streaming
     JA4        string            // TLS fingerprint
     Agent      string            // matched agent name (if any)
-    Confidence Confidence        // computed confidence level
+    AIScore    AIScore           // computed AI score
     Extras     map[string]string
 }
 ```
 
 ## Accumulator
 
-Tracks events over time and computes confidence levels for process:domain pairs.
+Tracks events over time and computes AI scores for process:domain pairs.
 
 ```go
 // Interface - implement your own for custom persistence
 type Accumulator interface {
     Record(event Event)
-    Confidence(process, domain string) Confidence
+    AIScore(process, domain string) AIScore
     Count(process, domain string) int
     Stats(process, domain string) *PairStats
 }
@@ -79,8 +79,8 @@ acc := sai.NewAccumulator()
 
 for event := range mon.Events() {
     acc.Record(event)
-    conf := acc.Confidence(event.Process, event.Domain)
-    fmt.Printf("%s -> %s [%s]\n", event.Process, event.Domain, conf)
+    score := acc.AIScore(event.Process, event.Domain)
+    fmt.Printf("%s -> %s [%s]\n", event.Process, event.Domain, score)
 }
 ```
 
@@ -119,43 +119,22 @@ func (a *MyAccumulator) Record(event sai.Event) {
     // store in your database
 }
 
-func (a *MyAccumulator) Confidence(process, domain string) sai.Confidence {
+func (a *MyAccumulator) AIScore(process, domain string) sai.AIScore {
     // compute from your stored data
 }
 
 // ... implement Count and Stats
 ```
 
-### Confidence
+### AI Score
 
-Confidence is a float64 from 0.0 to 1.0:
+AIScore is a float64 from 0.0 to 1.0:
 
 - `1.0` - known AI agent (in overrides)
 - `0.0` - known noise (in overrides)
 - `0.0-0.99` - computed by classifiers for unknown traffic
 
-Traffic heuristics that increase confidence:
-- Byte asymmetry (large response vs small request)
-- Packet ratio (many response packets per request)
-- Small average packet size (token streaming)
-- Sustained packet rate
-- Long-lived connections
-- TLS + streaming source combination
-- Programmatic TLS client
-- Multiple observations
-
-### Infrastructure penalties
-
-Certain subdomains indicate non-LLM infrastructure and reduce confidence:
-
-| Penalty | Subdomains |
-|---------|------------|
-| 0.5 | `logs`, `log`, `logging`, `telemetry`, `ocsp`, `ocsp2`, `crl` |
-| 0.4 | `metrics`, `intake`, `analytics`, `tracking`, `tracker`, `statsig`, `cloudkit`, `apple-cloudkit`, `cloudfront`, `cloudflare`, `akamai`, `fastly`, `icloud` |
-| 0.3 | `events`, `cdn`, `static`, `assets`, `media`, `gateway`, `stats`, `status`, `health` |
-| 0.2 | `auth`, `oauth`, `oauth2`, `login`, `sso` |
-
-Penalties stack when multiple infrastructure subdomains are present.
+See [classifiers.md](classifiers.md) for scoring signals and infrastructure penalties.
 
 ## Signals
 
@@ -267,7 +246,7 @@ confidence := registry.Classify(input)
 
 ## Database
 
-Optional SQLite storage (darwin only, CLI uses this):
+Optional SQLite storage (CLI uses this):
 
 ```go
 db, _ := sai.OpenDB(sai.DefaultDBPath())

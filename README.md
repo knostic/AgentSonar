@@ -1,6 +1,6 @@
 # sai
 
-Detect shadow AI on your machine by tracking which processes call AI-related domains.
+Detect shadow AI agents by monitoring network traffic and classifying process-to-domain pairs.
 
 ## Install
 
@@ -32,57 +32,39 @@ This sets up packet capture permissions:
 - **macOS:** Creates `access_bpf` group, sets BPF device permissions
 - **Linux:** Sets `cap_net_raw,cap_net_admin` capabilities on the binary
 
-### Containers
-
-When running in Docker/Kubernetes, PID lookup may fail due to namespace isolation (e.g., `curl` requests won't appear). Use `--enable-pid0` to capture all traffic regardless of PID resolution.
-
 ## Usage
+
+### Monitoring
 
 ```bash
 sai                     # monitor AI domain events (foreground)
 sai start               # start daemon (background)
 sai stop                # stop daemon
 sai status              # check if daemon is running
-sai -a                  # all domains, not just AI
-sai -j                  # JSON output
-sai --enable-pid0       # include events where PID lookup fails
-sai events --since 1h   # query stored events
-sai classify            # classify events from stdin (JSON lines)
-sai agents              # list known agents
-sai ignore              # list/add/remove noise domains
-sai triage              # classify unknown events
-sai sig                 # import/export overrides
-sai classifier          # manage external classifiers
-sai doctor              # check system health
-sai setup               # setup BPF permissions
 ```
 
-## Go API
+| Flag | Description |
+|------|-------------|
+| `-a` | All domains, not just AI |
+| `-j` | JSON output |
+| `-i <iface>` | Network interface (default: en0) |
+| `--enable-pid0` | Include traffic without process association |
 
-Library API available for embedding. See [docs/api.md](docs/api.md) and [examples/](examples/).
-
-```go
-mon := sai.NewMonitor(sai.Config{Interface: "en0"})
-mon.Start()
-for event := range mon.Events() {
-    fmt.Printf("%s -> %s\n", event.Process, event.Domain)
-}
-
-// Overrides and classifiers work cross-platform
-overrides := sai.NewOverrides()
-overrides.AddAgent("claude", "claude*", []string{"*.anthropic.com"})
-overrides.AddNoise("google.com")
-acc := sai.NewAccumulatorWithOverrides(overrides, sai.NewClassifierRegistry())
-```
-
-### Examples
+### Subcommands
 
 ```bash
-go run ./examples/custom_signals   # custom Signals implementation
-go run ./examples/export_import    # Overrides serialization
-go run ./examples/basic_monitor    # simple monitoring (darwin)
-go run ./examples/full_monitor     # full monitoring with accumulator (darwin)
+sai events --since 1h   # query stored events
+sai classify            # classify events from stdin (JSON lines)
+sai agents              # list/add/remove known agents
+sai ignore              # list/add/remove noise domains
+sai triage              # interactive classification of unknown events
+sai export / sai import # import/export overrides
+sai classifier          # manage external classifiers
+sai doctor              # check system health
+sai install / uninstall # setup/remove BPF permissions
 ```
+
+See [docs/commands.md](docs/commands.md) for full reference.
 
 ### Classify-only Mode
 
@@ -96,6 +78,30 @@ echo '{"proc":"myagent","domain":"ai.example.com","source":"tls","extras":{"byte
 sai classify -c default -c my-model < events.jsonl
 ```
 
-## Commands
+### Monitoring Without Process Association
 
-See [docs/commands.md](docs/commands.md) for full reference.
+SAI associates network traffic with local processes by looking up socket ownership. In some scenarios, this lookup fails:
+
+- **Containers:** Namespace isolation prevents PID resolution
+- **Proxy/gateway servers:** Traffic passing through has no local process
+- **TAP/span ports:** Mirrored traffic from other hosts
+
+Use `--enable-pid0` to capture all traffic regardless of process association:
+
+```bash
+sai -i bond0 --enable-pid0    # monitor mirrored traffic
+sai -i eth0 --enable-pid0     # proxy server seeing client traffic
+```
+
+For offline analysis, capture traffic externally and pipe to the classifier:
+
+```bash
+# Extract SNI from pcap, format as JSON, classify
+tshark -r capture.pcap -Y 'tls.handshake.extensions_server_name' \
+  -T fields -e tls.handshake.extensions_server_name | \
+  jq -Rc '{domain: ., source: "tls"}' | sai classify
+```
+
+## Go API
+
+Library API available for embedding. See [docs/api.md](docs/api.md) and [examples/](examples/).

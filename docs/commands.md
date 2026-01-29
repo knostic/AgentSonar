@@ -1,21 +1,5 @@
 # Commands
 
-## Prerequisites
-
-Packet capture requires elevated permissions:
-
-**macOS** - BPF device access:
-```bash
-sai install
-```
-
-**Linux** - either run as root, or grant capabilities:
-```bash
-sudo setcap cap_net_raw,cap_net_admin=eip /path/to/sai
-```
-
-Run `sai doctor` to verify permissions, or `sai setup` for setup instructions.
-
 ## sai
 
 Live monitoring - streams events to stdout.
@@ -29,7 +13,7 @@ sai [flags]
 | `-a` | All domain events, not just known AI |
 | `-j` | JSON lines output |
 | `-i <iface>` | Network interface (default: en0) |
-| `--enable-pid0` | Include PID 0 / system processes |
+| `--enable-pid0` | Include traffic without local process association (containers, mirrored traffic, proxy monitoring) |
 
 Output format (tab-separated):
 ```
@@ -53,7 +37,7 @@ sai start [flags]
 | `-a` | All domain events, not just known AI |
 | `-j` | JSON lines output |
 | `-i <iface>` | Network interface (default: en0) |
-| `--enable-pid0` | Include PID 0 / system processes |
+| `--enable-pid0` | Include traffic without local process association (containers, mirrored traffic, proxy monitoring) |
 
 Logs: `~/.config/sai/sai.log`, PID: `~/.config/sai/sai.pid`
 
