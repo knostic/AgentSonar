@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/knostic/sai/internal/capture"
+	"github.com/stretchr/testify/require"
 )
 
 func TestKnownAgentFullFlow(t *testing.T) {
@@ -257,9 +258,9 @@ func TestOverridesHotReload(t *testing.T) {
 			t.Fatalf("triage save failed: %v", err)
 		}
 
-		if !daemon.IsNoise("facebook.com") {
-			t.Error("daemon should see noise added by triage without manual reload")
-		}
+		require.Eventually(t, func() bool {
+			return daemon.IsNoise("facebook.com")
+		}, time.Second, 10*time.Millisecond, "daemon should see noise added by triage without manual reload")
 	})
 }
 
