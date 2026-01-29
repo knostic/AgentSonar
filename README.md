@@ -47,6 +47,7 @@ sai -a                  # all domains, not just AI
 sai -j                  # JSON output
 sai --enable-pid0       # include events where PID lookup fails
 sai events --since 1h   # query stored events
+sai classify            # classify events from stdin (JSON lines)
 sai agents              # list known agents
 sai ignore              # list/add/remove noise domains
 sai triage              # classify unknown events
@@ -81,6 +82,18 @@ go run ./examples/custom_signals   # custom Signals implementation
 go run ./examples/export_import    # Overrides serialization
 go run ./examples/basic_monitor    # simple monitoring (darwin)
 go run ./examples/full_monitor     # full monitoring with accumulator (darwin)
+```
+
+### Classify-only Mode
+
+Classify events from external sources without live network monitoring:
+
+```bash
+echo '{"proc":"myagent","domain":"ai.example.com","source":"tls","extras":{"bytes_in":"50000","bytes_out":"1000","packets_in":"300","packets_out":"10","duration_ms":"10000","programmatic":"true"}}' | sai classify
+# {"proc":"myagent","domain":"ai.example.com","scores":{"default":0.8},"agent":"","is_noise":false}
+
+# Use specific classifiers
+sai classify -c default -c my-model < events.jsonl
 ```
 
 ## Commands

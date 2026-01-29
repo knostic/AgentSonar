@@ -78,6 +78,7 @@ func init() {
 
 	eventsCmd.GroupID = "query"
 	triageCmd.GroupID = "query"
+	classifyCmd.GroupID = "query"
 
 	agentsCmd.GroupID = "config"
 	ignoreCmd.GroupID = "config"
@@ -99,6 +100,7 @@ func init() {
 	rootCmd.AddCommand(exportCmd)
 	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(classifierCmd)
+	rootCmd.AddCommand(classifyCmd)
 }
 
 func main() {
@@ -293,6 +295,23 @@ var classifierCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		listClassifiers()
 	},
+}
+
+var classifyCmd = &cobra.Command{
+	Use:   "classify",
+	Short: "Classify events from stdin (JSON lines)",
+	Long: `Classify events from stdin (JSON lines).
+
+Example:
+  echo '{"proc":"myagent","domain":"ai.example.com","source":"tls","extras":{"bytes_in":"50000","bytes_out":"1000","packets_in":"300","packets_out":"10","duration_ms":"10000","programmatic":"true"}}' | sai classify`,
+	Run: func(cmd *cobra.Command, args []string) {
+		classifiers, _ := cmd.Flags().GetStringSlice("classifier")
+		runClassify(classifiers)
+	},
+}
+
+func init() {
+	classifyCmd.Flags().StringSliceP("classifier", "c", nil, "classifiers to use (default: all configured)")
 }
 
 var classifierLoadCmd = &cobra.Command{
@@ -493,6 +512,74 @@ func runEvents(cmd *cobra.Command) {
 			}
 			printEvent(e.Timestamp, agent, e.Process, e.PID, e.Domain, e.Source, conf)
 		}
+	}
+}
+
+func runClassify(selectedClassifiers []string) {
+	overrides := loadOverrides()
+	registry := sai.NewClassifierRegistry()
+
+	selected := make(map[string]bool)
+	for _, name := range selectedClassifiers {
+		selected[name] = true
+	}
+	useAll := len(selected) == 0
+
+	if useAll || selected["default"] {
+		registry.Add(sai.NewDefaultClassifier())
+	}
+	for _, cfg := range overrides.ListClassifiers() {
+		if useAll || selected[cfg.Name] {
+			c, err := sai.NewProcessClassifier(sai.ProcessClassifierConfig{
+				Name:    cfg.Name,
+				Command: cfg.Command,
+				Args:    cfg.Args,
+				Timeout: cfg.Timeout,
+			})
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: could not load classifier %s: %v\n", cfg.Name, err)
+				continue
+			}
+			registry.Add(c)
+		}
+	}
+	defer registry.Close()
+
+	acc := sai.NewAccumulatorWithOverrides(overrides, registry)
+
+	scanner := bufio.NewScanner(os.Stdin)
+	enc := json.NewEncoder(os.Stdout)
+
+	for scanner.Scan() {
+		var event sai.Event
+		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
+			continue
+		}
+
+		acc.Record(event)
+		agent := overrides.MatchAgent(event.Process, event.Domain)
+		isNoise := overrides.IsNoise(event.Domain)
+
+		input := sai.ClassifierInput{
+			Domain:  event.Domain,
+			Process: event.Process,
+			Source:  event.Source,
+			JA4:     event.JA4,
+			Stats:   acc.Stats(event.Process, event.Domain),
+		}
+		scores := registry.ClassifyAll(input)
+
+		if agent != "" {
+			scores["agent"] = 1.0
+		}
+
+		enc.Encode(map[string]any{
+			"proc":     event.Process,
+			"domain":   event.Domain,
+			"scores":   scores,
+			"agent":    agent,
+			"is_noise": isNoise,
+		})
 	}
 }
 
