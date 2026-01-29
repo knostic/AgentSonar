@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.1.0](https://github.com/knostic/shadow_ai/compare/v1.0.0...v1.1.0) (2026-01-29)
+
+
+### Features
+
+* **cli:** classifier only ([74ed27a](https://github.com/knostic/shadow_ai/commit/74ed27aba8b83062b60999add9f5b7445da351c2))
+
+
+### Bug Fixes
+
+* test hot reload ([a79ce58](https://github.com/knostic/shadow_ai/commit/a79ce5800b5bf0dc80a3dc52c30d3fe6694a302f))
+* use file size in addition to modTime for hot reload detection ([abcbcca](https://github.com/knostic/shadow_ai/commit/abcbccaee74573ffdfd05f76190efb11ceaab1e4))
+
 ## 1.0.0 (2026-01-26)
 
 
