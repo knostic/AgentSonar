@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/knostic/shadow_ai/compare/v1.1.0...v1.1.1) (2026-01-29)
+
+
+### Bug Fixes
+
+* api validation ([4ca8638](https://github.com/knostic/shadow_ai/commit/4ca8638eae6706b6b2d60d669a01cf302814b777))
+
 ## [1.1.0](https://github.com/knostic/shadow_ai/compare/v1.0.0...v1.1.0) (2026-01-29)
 
 
