@@ -370,9 +370,11 @@ var doctorCmd = &cobra.Command{
 }
 
 func runMonitor(cmd *cobra.Command) {
-	if runtime.GOOS == "darwin" && !userInGroup(os.Getenv("USER"), bpfGroup) {
-		fmt.Fprintf(os.Stderr, "error: user not in %s group\n", bpfGroup)
-		fmt.Fprintln(os.Stderr, "hint: run 'sai install' to configure BPF permissions")
+	if err := sai.CheckPermissions(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		if permErr, ok := err.(*sai.PermissionError); ok {
+			fmt.Fprintln(os.Stderr, "hint:", permErr.Hint())
+		}
 		os.Exit(1)
 	}
 
