@@ -10,9 +10,9 @@ go get github.com/knostic/sai
 
 ## Platform Support
 
-| Component | darwin | linux/windows |
-|-----------|--------|---------------|
-| Monitor | Yes | Stub (returns error) |
+| Component | darwin | linux |
+|-----------|--------|-------|
+| Monitor | Yes | Yes |
 | Signals/Overrides | Yes | Yes |
 | Accumulator | Yes | Yes |
 | Classifiers | Yes | Yes |
@@ -20,13 +20,13 @@ go get github.com/knostic/sai
 
 ## Monitor
 
-Network monitoring requires darwin (macOS). On other platforms, `NewMonitor` returns a stub that errors on `Start()`.
+Network monitoring requires darwin (macOS) or linux.
 
 ```go
 import "github.com/knostic/sai"
 
 mon := sai.NewMonitor(sai.Config{
-    Interface:  "en0",      // network interface
+    Interface:  "en0",      // network interface (en0 on macOS, eth0 on Linux)
     EnablePID0: false,      // include kernel/system processes
 })
 
