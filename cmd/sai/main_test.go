@@ -485,3 +485,48 @@ func TestPidAndLogPaths(t *testing.T) {
 		t.Errorf("logPath() = %q, should end with sai.log", log)
 	}
 }
+
+func TestClassifyLogic(t *testing.T) {
+	withTestEnv(t, func(dir string) {
+		fs := sai.NewOverrides()
+		fs.AddAgent("test-agent", "python*", []string{"*.openai.com"})
+		fs.AddNoise("noise.example.com")
+		fs.Save(sai.DefaultOverridesPath())
+
+		overrides := loadOverrides()
+		registry := sai.NewClassifierRegistry()
+		registry.Add(sai.NewDefaultClassifier())
+		defer registry.Close()
+
+		acc := sai.NewAccumulatorWithOverrides(overrides, registry)
+
+		// Known agent detection
+		event := sai.Event{Process: "python3", Domain: "api.openai.com", Source: "tls"}
+		acc.Record(event)
+		agent := overrides.MatchAgent(event.Process, event.Domain)
+		if agent != "test-agent" {
+			t.Errorf("expected agent 'test-agent', got %q", agent)
+		}
+
+		// Noise domain filtering
+		if !overrides.IsNoise("noise.example.com") {
+			t.Error("noise.example.com should be classified as noise")
+		}
+		if !overrides.IsNoise("sub.noise.example.com") {
+			t.Error("sub.noise.example.com should be classified as noise (subdomain)")
+		}
+
+		// Unknown domain gets classifier scores
+		input := sai.ClassifierInput{Domain: "unknown.com", Process: "curl", Source: "dns"}
+		scores := registry.ClassifyAll(input)
+		if _, ok := scores["default"]; !ok {
+			t.Error("expected 'default' classifier to return a score")
+		}
+
+		// Non-matching agent returns empty string
+		nonAgent := overrides.MatchAgent("curl", "random.com")
+		if nonAgent != "" {
+			t.Errorf("expected empty agent for non-matching process/domain, got %q", nonAgent)
+		}
+	})
+}
