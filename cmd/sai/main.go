@@ -21,6 +21,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const banner = `
+ __  ___ .__   __.   ______        _______.___________. __    ______
+|  |/  / |  \ |  |  /  __  \      /       |           ||  |  /      |
+|  '  /  |   \|  | |  |  |  |    |   (----` + "`" + `---|  |----` + "`" + `|  | |  ,----'
+|    <   |  . ` + "`" + `  | |  |  |  |     \   \       |  |     |  | |  |
+|  .  \  |  |\   | |  ` + "`" + `--'  | .----)   |      |  |     |  | |  ` + "`" + `----.
+|__|\__\ |__| \__|  \______/  |_______/       |__|     |__|  \______|
+
+                         knostic.ai
+
+`
+
 var isTTY = func() bool {
 	fi, err := os.Stdout.Stat()
 	if err != nil {
@@ -410,6 +422,10 @@ func runMonitor(cmd *cobra.Command) {
 	}
 	defer mon.Stop()
 
+	if !jsonOutput {
+		fmt.Print(banner)
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
@@ -688,6 +704,9 @@ func runTriage() {
 	}
 
 	events := allEvents
+
+	fmt.Print(banner)
+
 	if len(events) == 0 {
 		fmt.Println("no events to triage")
 		return
