@@ -1585,41 +1585,42 @@ func listUsableInterfaces() []string {
 }
 
 const (
-	eventFormat        = "%s  %-14s  %-28s  %-13s  %-10s  %s"
-	eventFormatVerbose = "%s  %-14s  %-28s  %-13s  %-10s  %-8s  %6s"
+	eventFormat        = "%s  %s  %-14s  %-28s  %-13s  %-10s  %s"
+	eventFormatVerbose = "%s  %s  %-14s  %-28s  %-13s  %-10s  %-8s  %6s"
 	unknownAgent       = "-"
 )
 
 func printEventHeader(verbose bool) {
-	aiHeader := fmt.Sprintf("%-7s", "AI")
 	if verbose {
 		if isTTY {
-			fmt.Printf("\033[1m"+eventFormatVerbose+"\033[0m\n", aiHeader, "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME", "PID")
+			fmt.Printf("\033[1m"+eventFormatVerbose+"\033[0m\n", " ", "AI? ", "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME", "PID")
 		} else {
-			fmt.Printf(eventFormatVerbose+"\n", aiHeader, "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME", "PID")
+			fmt.Printf(eventFormatVerbose+"\n", " ", "AI? ", "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME", "PID")
 		}
 	} else {
 		if isTTY {
-			fmt.Printf("\033[1m"+eventFormat+"\033[0m\n", aiHeader, "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME")
+			fmt.Printf("\033[1m"+eventFormat+"\033[0m\n", " ", "AI? ", "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME")
 		} else {
-			fmt.Printf(eventFormat+"\n", aiHeader, "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME")
+			fmt.Printf(eventFormat+"\n", " ", "AI? ", "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME")
 		}
 	}
 }
 
 func printLegend() {
-	fmt.Println("Legend: * known agent  ! high (>=0.7)  ? medium (>=0.4)  · low (<0.4)")
+	fmt.Println("AI? = confidence that domain is an AI service")
+	fmt.Println("  * = confirmed (via triage or imported signatures)")
+	fmt.Println("  ! >= 70%  |  ? >= 40%  |  · < 40%")
 	fmt.Println()
 }
 
 func printEvent(ts time.Time, agent, process string, pid int, domain, source string, score sai.AIScore, isKnownAgent, verbose bool) {
-	scoreStr := formatScore(score, isKnownAgent)
+	symbol, pct := formatScore(score, isKnownAgent)
 	var line string
 	if verbose {
 		pidStr := fmt.Sprintf("%d", pid)
-		line = fmt.Sprintf(eventFormatVerbose, scoreStr, agent, domain, process, source, ts.Format("15:04:05"), pidStr)
+		line = fmt.Sprintf(eventFormatVerbose, symbol, pct, agent, domain, process, source, ts.Format("15:04:05"), pidStr)
 	} else {
-		line = fmt.Sprintf(eventFormat, scoreStr, agent, domain, process, source, ts.Format("15:04:05"))
+		line = fmt.Sprintf(eventFormat, symbol, pct, agent, domain, process, source, ts.Format("15:04:05"))
 	}
 	if isTTY && isKnownAgent {
 		fmt.Printf("\033[32m%s\033[0m\n", line)
@@ -1628,25 +1629,35 @@ func printEvent(ts time.Time, agent, process string, pid int, domain, source str
 	}
 }
 
-func formatScore(score sai.AIScore, isKnownAgent bool) string {
-	const width = 7
+func formatScore(score sai.AIScore, isKnownAgent bool) (symbol, pct string) {
 	if isKnownAgent {
-		return fmt.Sprintf("%-*s", width, "*")
+		if isTTY {
+			return "\033[32m*\033[0m", "    "
+		}
+		return "*", "    "
 	}
+	p := int(score * 100)
+	pctStr := fmt.Sprintf("%-4s", fmt.Sprintf("%d%%", p))
 	if !isTTY {
-		return fmt.Sprintf("%-*s", width, fmt.Sprintf("%.2f", score))
+		switch {
+		case p >= 70:
+			return "!", pctStr
+		case p >= 40:
+			return "?", pctStr
+		default:
+			return "·", pctStr
+		}
 	}
-	var symbol, color string
+	var sym, color string
 	switch {
-	case score >= 0.70:
-		symbol, color = "!", "\033[31m"
-	case score >= 0.40:
-		symbol, color = "?", "\033[33m"
+	case p >= 70:
+		sym, color = "!", "\033[31m"
+	case p >= 40:
+		sym, color = "?", "\033[33m"
 	default:
-		symbol, color = "·", "\033[32m"
+		sym, color = "·", "\033[32m"
 	}
-	content := fmt.Sprintf("%s %.2f", symbol, score)
-	return fmt.Sprintf("%s%-*s\033[0m", color, width, content)
+	return fmt.Sprintf("%s%s\033[0m", color, sym), fmt.Sprintf("%s%s\033[0m", color, pctStr)
 }
 
 func baseDomain(domain string) string {

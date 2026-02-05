@@ -597,11 +597,12 @@ func TestLegacyLogFileMigration(t *testing.T) {
 }
 
 func TestEventTableAlignment(t *testing.T) {
-	columns := []string{"AI", "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME"}
-	// Column widths from eventFormat: "%-7s  %-14s  %-28s  %-13s  %-10s  %s"
-	colWidths := map[string]int{"AI": 7, "AGENT": 14, "DOMAIN": 28, "PROCESS": 13, "SOURCE": 10, "TIME": 8}
+	// eventFormat = "%s  %s  %-14s  %-28s  %-13s  %-10s  %s"
+	// Columns: SYMBOL(1), AI?(4 pre-padded), AGENT(14), DOMAIN(28), PROCESS(13), SOURCE(10), TIME
+	columns := []string{"AI? ", "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME"}
+	colWidths := map[string]int{"AGENT": 14, "DOMAIN": 28, "PROCESS": 13, "SOURCE": 10, "TIME": 8}
 
-	header := fmt.Sprintf(eventFormat, fmt.Sprintf("%-7s", "AI"), "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME")
+	header := fmt.Sprintf(eventFormat, " ", "AI? ", "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME")
 
 	// Find column start positions from header
 	colPositions := make(map[string]int)
@@ -635,19 +636,15 @@ func TestEventTableAlignment(t *testing.T) {
 	var lines []string
 	lines = append(lines, header)
 
-	aiLengths := genLengths(colWidths["AI"])
 	agentLengths := genLengths(colWidths["AGENT"])
 	domainLengths := genLengths(colWidths["DOMAIN"])
 	procLengths := genLengths(colWidths["PROCESS"])
 
-	for _, aiLen := range aiLengths {
-		for _, agentLen := range agentLengths {
-			for _, domainLen := range domainLengths {
-				for _, procLen := range procLengths {
-					ai := fmt.Sprintf("%-7s", genStr(aiLen))
-					line := fmt.Sprintf(eventFormat, ai, genStr(agentLen), genStr(domainLen), genStr(procLen), "tls", "12:00:00")
-					lines = append(lines, line)
-				}
+	for _, agentLen := range agentLengths {
+		for _, domainLen := range domainLengths {
+			for _, procLen := range procLengths {
+				line := fmt.Sprintf(eventFormat, "!", "50% ", genStr(agentLen), genStr(domainLen), genStr(procLen), "tls", "12:00:00")
+				lines = append(lines, line)
 			}
 		}
 	}
@@ -670,9 +667,9 @@ func TestEventTableAlignment(t *testing.T) {
 
 func TestEventFormatColumnWidths(t *testing.T) {
 	// Verify the format string has reasonable column widths
-	// eventFormat = "%-7s  %-14s  %-28s  %-13s  %-10s  %s"
+	// eventFormat = "%s  %s  %-14s  %-28s  %-13s  %-10s  %s"
+	// Symbol and AI? columns are pre-padded in formatScore
 	expectedWidths := map[string]int{
-		"AI":      7,
 		"AGENT":   14,
 		"DOMAIN":  28,
 		"PROCESS": 13,
@@ -710,28 +707,35 @@ func TestFormatScoreTTY(t *testing.T) {
 		name         string
 		score        sai.AIScore
 		isKnownAgent bool
-		wantColor    bool
 		wantSymbol   string
+		wantPct      string
 	}{
-		{"known agent", 1.0, true, false, "*"},
-		{"high score", 0.85, false, true, "!"},
-		{"medium score", 0.55, false, true, "?"},
-		{"low score", 0.15, false, true, "·"},
+		{"known agent", 1.0, true, "*", ""},
+		{"high score", 0.85, false, "!", "85%"},
+		{"medium score", 0.55, false, "?", "55%"},
+		{"low score", 0.15, false, "·", "15%"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := formatScore(tt.score, tt.isKnownAgent)
-			hasColor := strings.Contains(result, "\033[")
-			if tt.isKnownAgent {
-				if hasColor {
-					t.Errorf("known agent should not have color codes in score, got %q", result)
-				}
-			} else if !hasColor {
-				t.Errorf("TTY mode should have color codes, got %q", result)
+			symbol, pct := formatScore(tt.score, tt.isKnownAgent)
+			if !strings.Contains(symbol, tt.wantSymbol) {
+				t.Errorf("expected symbol %q in %q", tt.wantSymbol, symbol)
 			}
-			if !strings.Contains(result, tt.wantSymbol) {
-				t.Errorf("expected symbol %q in %q", tt.wantSymbol, result)
+			if tt.wantPct != "" && !strings.Contains(pct, tt.wantPct) {
+				t.Errorf("expected pct %q in %q", tt.wantPct, pct)
+			}
+			if !tt.isKnownAgent {
+				if !strings.Contains(symbol, "\033[") {
+					t.Errorf("TTY mode should have color codes in symbol, got %q", symbol)
+				}
+				if !strings.Contains(pct, "\033[") {
+					t.Errorf("TTY mode should have color codes in pct, got %q", pct)
+				}
+			} else {
+				if strings.TrimSpace(pct) != "" {
+					t.Errorf("known agent pct should be empty/whitespace, got %q", pct)
+				}
 			}
 		})
 	}
@@ -744,25 +748,29 @@ func TestFormatScoreNonTTY(t *testing.T) {
 	isTTY = false
 
 	tests := []struct {
-		name         string
-		score        sai.AIScore
-		isKnownAgent bool
-		wantContains string
+		name       string
+		score      sai.AIScore
+		isKnown    bool
+		wantSymbol string
+		wantPct    string
 	}{
-		{"known agent", 1.0, true, "*"},
-		{"high score", 0.85, false, "0.85"},
-		{"medium score", 0.55, false, "0.55"},
-		{"low score", 0.15, false, "0.15"},
+		{"known agent", 1.0, true, "*", "    "},
+		{"high score", 0.85, false, "!", "85% "},
+		{"medium score", 0.55, false, "?", "55% "},
+		{"low score", 0.15, false, "·", "15% "},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := formatScore(tt.score, tt.isKnownAgent)
-			if strings.Contains(result, "\033[") {
-				t.Errorf("non-TTY mode should not have color codes, got %q", result)
+			symbol, pct := formatScore(tt.score, tt.isKnown)
+			if strings.Contains(symbol, "\033[") || strings.Contains(pct, "\033[") {
+				t.Errorf("non-TTY mode should not have color codes, got symbol=%q pct=%q", symbol, pct)
 			}
-			if !strings.Contains(result, tt.wantContains) {
-				t.Errorf("expected %q in %q", tt.wantContains, result)
+			if symbol != tt.wantSymbol {
+				t.Errorf("expected symbol %q, got %q", tt.wantSymbol, symbol)
+			}
+			if pct != tt.wantPct {
+				t.Errorf("expected pct %q, got %q", tt.wantPct, pct)
 			}
 		})
 	}
