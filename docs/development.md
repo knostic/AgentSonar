@@ -22,7 +22,7 @@ dnf install libpcap-devel
 ## Setup
 
 ```bash
-git clone https://github.com/knostic/sai
+git clone https://github.com/knostic/agentsonar
 cd sai
 go mod download
 ```
@@ -31,7 +31,7 @@ go mod download
 
 **Automated setup:**
 ```bash
-sai install
+agentsonar install
 ```
 
 #### macOS
@@ -54,18 +54,18 @@ Sets capabilities on the binary. Requires `libcap2-bin` (Debian/Ubuntu) or `libc
 
 **Manual setup:**
 ```bash
-sudo setcap cap_net_raw,cap_net_admin=eip /path/to/sai
+sudo setcap cap_net_raw,cap_net_admin=eip /path/to/agentsonar
 ```
 
 Log out and back in for group membership to take effect.
 
-Run `sai doctor` to verify permissions.
+Run `agentsonar doctor` to verify permissions.
 
 ## Build
 
 ```bash
-make build        # production binary -> bin/sai
-make dev          # dev build (includes sai nuke)
+make build        # production binary -> bin/agentsonar
+make dev          # dev build (includes agentsonar nuke)
 make install      # copy to /usr/local/bin
 ```
 
@@ -78,7 +78,7 @@ make test
 ## Project Structure
 
 ```
-cmd/sai/          # CLI entrypoint
+cmd/agentsonar/          # CLI entrypoint
 internal/         # internal packages
 docs/             # documentation
 ```
@@ -86,4 +86,4 @@ docs/             # documentation
 ## Dev vs Production
 
 Dev builds (`make dev`) include:
-- `sai nuke` - clear database
+- `agentsonar nuke` - clear database

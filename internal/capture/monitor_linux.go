@@ -15,7 +15,7 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
-	"github.com/knostic/sai/types"
+	"github.com/knostic/agentsonar/types"
 )
 
 type sniMonitor struct {

@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/knostic/sai"
+	"github.com/knostic/agentsonar"
 )
 
 func main() {

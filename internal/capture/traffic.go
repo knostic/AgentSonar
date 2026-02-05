@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/knostic/sai/types"
+	"github.com/knostic/agentsonar/types"
 )
 
 type connectionStats struct {

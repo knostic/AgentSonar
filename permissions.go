@@ -48,11 +48,11 @@ func (e *PermissionError) Unwrap() error {
 func (e *PermissionError) Hint() string {
 	switch e.Reason {
 	case ReasonBPFAccess, ReasonBPFGroup:
-		return "run 'sai install' to configure BPF permissions"
+		return "run 'agentsonar install' to configure BPF permissions"
 	case ReasonCapability:
-		return "run 'sai install' to configure capture capabilities"
+		return "run 'agentsonar install' to configure capture capabilities"
 	default:
-		return "run 'sai install' to configure permissions"
+		return "run 'agentsonar install' to configure permissions"
 	}
 }
 

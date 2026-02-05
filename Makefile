@@ -1,15 +1,15 @@
 .PHONY: build dev clean install test tidy
 
-BINARY=sai
+BINARY=agentsonar
 BUILD_DIR=bin
 
 build:
 	@mkdir -p $(BUILD_DIR)
-	go build -ldflags="-s -w" -o $(BUILD_DIR)/$(BINARY) ./cmd/sai
+	go build -ldflags="-s -w" -o $(BUILD_DIR)/$(BINARY) ./cmd/agentsonar
 
 dev:
 	@mkdir -p $(BUILD_DIR)
-	go build -tags dev -o $(BUILD_DIR)/$(BINARY) ./cmd/sai
+	go build -tags dev -o $(BUILD_DIR)/$(BINARY) ./cmd/agentsonar
 
 install: build
 	cp $(BUILD_DIR)/$(BINARY) /usr/local/bin/
@@ -24,4 +24,4 @@ tidy:
 	go mod tidy
 
 setup-bpf: build
-	@./bin/sai install
+	@./bin/agentsonar install

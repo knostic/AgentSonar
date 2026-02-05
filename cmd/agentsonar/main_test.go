@@ -9,16 +9,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/knostic/sai"
+	"github.com/knostic/agentsonar"
 	"github.com/spf13/cobra"
 )
 
 func withTestEnv(t *testing.T, fn func(dir string)) {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("SAI_DB_PATH", filepath.Join(dir, "sai.db"))
-	t.Setenv("SAI_OVERRIDES_PATH", filepath.Join(dir, "overrides.bin"))
-	t.Setenv("SAI_CONFIG_DIR", dir)
+	t.Setenv("AGENTSONAR_DB_PATH", filepath.Join(dir, "agentsonar.db"))
+	t.Setenv("AGENTSONAR_OVERRIDES_PATH", filepath.Join(dir, "overrides.bin"))
+	t.Setenv("AGENTSONAR_CONFIG_DIR", dir)
 	fn(dir)
 }
 
@@ -454,8 +454,8 @@ func TestPathEnvVars(t *testing.T) {
 	customDB := filepath.Join(dir, "custom.db")
 	customFilter := filepath.Join(dir, "custom.bin")
 
-	t.Setenv("SAI_DB_PATH", customDB)
-	t.Setenv("SAI_OVERRIDES_PATH", customFilter)
+	t.Setenv("AGENTSONAR_DB_PATH", customDB)
+	t.Setenv("AGENTSONAR_OVERRIDES_PATH", customFilter)
 
 	if sai.DefaultDBPath() != customDB {
 		t.Errorf("DefaultDBPath() = %q, want %q", sai.DefaultDBPath(), customDB)
@@ -467,22 +467,131 @@ func TestPathEnvVars(t *testing.T) {
 
 func TestPidAndLogPaths(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("SAI_CONFIG_DIR", dir)
+	t.Setenv("AGENTSONAR_CONFIG_DIR", dir)
 
 	pid := pidPath()
 	if !strings.HasPrefix(pid, dir) {
 		t.Errorf("pidPath() = %q, should start with %q", pid, dir)
 	}
-	if !strings.HasSuffix(pid, "sai.pid") {
-		t.Errorf("pidPath() = %q, should end with sai.pid", pid)
+	if !strings.HasSuffix(pid, "agentsonar.pid") {
+		t.Errorf("pidPath() = %q, should end with agentsonar.pid", pid)
 	}
 
 	log := logPath()
 	if !strings.HasPrefix(log, dir) {
 		t.Errorf("logPath() = %q, should start with %q", log, dir)
 	}
-	if !strings.HasSuffix(log, "sai.log") {
-		t.Errorf("logPath() = %q, should end with sai.log", log)
+	if !strings.HasSuffix(log, "agentsonar.log") {
+		t.Errorf("logPath() = %q, should end with agentsonar.log", log)
+	}
+}
+
+func TestLegacyConfigDirEnvVar(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AGENTSONAR_CONFIG_DIR", "")
+	t.Setenv("SAI_CONFIG_DIR", dir)
+
+	pid := pidPath()
+	if !strings.HasPrefix(pid, dir) {
+		t.Errorf("pidPath() = %q, should use legacy SAI_CONFIG_DIR %q", pid, dir)
+	}
+
+	log := logPath()
+	if !strings.HasPrefix(log, dir) {
+		t.Errorf("logPath() = %q, should use legacy SAI_CONFIG_DIR %q", log, dir)
+	}
+}
+
+func TestNewConfigDirTakesPrecedence(t *testing.T) {
+	newDir := t.TempDir()
+	legacyDir := t.TempDir()
+	t.Setenv("AGENTSONAR_CONFIG_DIR", newDir)
+	t.Setenv("SAI_CONFIG_DIR", legacyDir)
+
+	pid := pidPath()
+	if !strings.HasPrefix(pid, newDir) {
+		t.Errorf("pidPath() = %q, should use new AGENTSONAR_CONFIG_DIR %q", pid, newDir)
+	}
+	if strings.HasPrefix(pid, legacyDir) {
+		t.Errorf("pidPath() should not use legacy dir when new dir is set")
+	}
+}
+
+func TestLegacyPidFileMigration(t *testing.T) {
+	dir := t.TempDir()
+	legacyDir := filepath.Join(dir, ".config", "sai")
+	newDir := filepath.Join(dir, ".config", "agentsonar")
+
+	if err := os.MkdirAll(legacyDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(newDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	legacyPid := filepath.Join(legacyDir, "sai.pid")
+	if err := os.WriteFile(legacyPid, []byte("12345"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", dir)
+	t.Setenv("AGENTSONAR_CONFIG_DIR", "")
+	t.Setenv("SAI_CONFIG_DIR", "")
+	t.Setenv("AGENTSONAR_DB_PATH", filepath.Join(newDir, "agentsonar.db"))
+
+	pid := pidPath()
+	expectedPid := filepath.Join(newDir, "agentsonar.pid")
+
+	if pid != expectedPid {
+		t.Errorf("pidPath() = %q, want %q", pid, expectedPid)
+	}
+
+	if _, err := os.Stat(expectedPid); os.IsNotExist(err) {
+		t.Error("legacy pid file should have been migrated")
+	}
+
+	content, _ := os.ReadFile(expectedPid)
+	if string(content) != "12345" {
+		t.Errorf("migrated pid content = %q, want %q", string(content), "12345")
+	}
+}
+
+func TestLegacyLogFileMigration(t *testing.T) {
+	dir := t.TempDir()
+	legacyDir := filepath.Join(dir, ".config", "sai")
+	newDir := filepath.Join(dir, ".config", "agentsonar")
+
+	if err := os.MkdirAll(legacyDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(newDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	legacyLog := filepath.Join(legacyDir, "sai.log")
+	if err := os.WriteFile(legacyLog, []byte("log content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", dir)
+	t.Setenv("AGENTSONAR_CONFIG_DIR", "")
+	t.Setenv("SAI_CONFIG_DIR", "")
+	t.Setenv("AGENTSONAR_DB_PATH", filepath.Join(newDir, "agentsonar.db"))
+
+	log := logPath()
+	expectedLog := filepath.Join(newDir, "agentsonar.log")
+
+	if log != expectedLog {
+		t.Errorf("logPath() = %q, want %q", log, expectedLog)
+	}
+
+	if _, err := os.Stat(expectedLog); os.IsNotExist(err) {
+		t.Error("legacy log file should have been migrated")
+	}
+
+	content, _ := os.ReadFile(expectedLog)
+	if string(content) != "log content" {
+		t.Errorf("migrated log content = %q, want %q", string(content), "log content")
 	}
 }
 

@@ -1,6 +1,6 @@
 package sai
 
-import "github.com/knostic/sai/types"
+import "github.com/knostic/agentsonar/types"
 
 type AIScore = types.AIScore
 type Event = types.Event

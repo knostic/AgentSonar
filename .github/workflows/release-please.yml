@@ -64,9 +64,9 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p bin
-          go build -ldflags="-s -w -X main.version=${{ needs.release-please.outputs.tag_name }}" -o bin/sai-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/sai
+          go build -ldflags="-s -w -X main.version=${{ needs.release-please.outputs.tag_name }}" -o bin/agentsonar-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/agentsonar
 
       - name: Upload to release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload ${{ needs.release-please.outputs.tag_name }} bin/sai-${{ matrix.goos }}-${{ matrix.goarch }}
+        run: gh release upload ${{ needs.release-please.outputs.tag_name }} bin/agentsonar-${{ matrix.goos }}-${{ matrix.goarch }}

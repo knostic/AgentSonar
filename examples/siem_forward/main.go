@@ -30,7 +30,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/knostic/sai"
+	"github.com/knostic/agentsonar"
 )
 
 // GELF message format for Graylog
@@ -128,7 +128,7 @@ func toGELF(e sai.Event, hostname string) GELFMessage {
 		Agent:        e.Agent,
 		AIScore:      float64(e.AIScore),
 		Source:       e.Source,
-		Facility:     "sai",
+		Facility:     "agentsonar",
 	}
 }
 
@@ -137,7 +137,7 @@ func toGELF(e sai.Event, hostname string) GELFMessage {
 // func sendToSplunk(event sai.Event, hecURL, hecToken string) error {
 //     payload := map[string]any{
 //         "event":      event,
-//         "sourcetype": "sai:shadow_ai",
+//         "sourcetype": "agentsonar:shadow_ai",
 //         "source":     "sai",
 //     }
 //     data, _ := json.Marshal(payload)

@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/knostic/sai"
+	"github.com/knostic/agentsonar"
 )
 
 func main() {

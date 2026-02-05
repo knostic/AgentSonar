@@ -1,4 +1,4 @@
-module github.com/knostic/sai
+module github.com/knostic/agentsonar
 
 go 1.24.4
 

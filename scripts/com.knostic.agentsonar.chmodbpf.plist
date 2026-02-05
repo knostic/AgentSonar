@@ -3,14 +3,14 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.knostic.sai.chmodbpf</string>
+    <string>com.knostic.agentsonar.chmodbpf</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Library/Application Support/Sai/ChmodBPF</string>
+        <string>/Library/Application Support/AgentSonar/ChmodBPF</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>AssociatedBundleIdentifiers</key>
-    <string>com.knostic.sai</string>
+    <string>com.knostic.agentsonar</string>
 </dict>
 </plist>

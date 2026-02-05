@@ -1,11 +1,11 @@
 # Go API
 
-Library for embedding sai's network monitoring into your own tools.
+Library for embedding agentsonar's network monitoring into your own tools.
 
 ## Install
 
 ```bash
-go get github.com/knostic/sai
+go get github.com/knostic/agentsonar
 ```
 
 ## Platform Support
@@ -23,7 +23,7 @@ go get github.com/knostic/sai
 Network monitoring requires darwin (macOS) or linux.
 
 ```go
-import "github.com/knostic/sai"
+import "github.com/knostic/agentsonar"
 
 mon := sai.NewMonitor(sai.Config{
     Interface:  "en0",      // network interface (en0 on macOS, eth0 on Linux)
