@@ -333,16 +333,26 @@ func (o *Overrides) Import(data OverridesData) {
 }
 
 func DefaultOverridesPath() string {
-	if p := os.Getenv("SAI_OVERRIDES_PATH"); p != "" {
+	if p := resolveLegacyEnvOverrides(); p != "" {
 		return p
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "sai", "overrides.bin")
+	newPath := defaultOverridesPathNew()
+	if _, err := os.Stat(newPath); os.IsNotExist(err) {
+		if _, err := os.Stat(legacyOverridesPath()); err == nil {
+			MigrateOverrides()
+		}
+	}
+	return newPath
 }
 
 func OverridesFileExists() bool {
-	_, err := os.Stat(DefaultOverridesPath())
-	return err == nil
+	if _, err := os.Stat(DefaultOverridesPath()); err == nil {
+		return true
+	}
+	if _, err := os.Stat(legacyOverridesPath()); err == nil {
+		return true
+	}
+	return false
 }
 
 func matchPattern(s, pattern string) bool {

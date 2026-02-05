@@ -54,13 +54,13 @@ jobs:
           VERSION: ${{ github.event.release.tag_name || github.ref_name }}
         run: |
           mkdir -p bin
-          go build -ldflags="-s -w -X main.version=$VERSION" -o bin/sai-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/sai
+          go build -ldflags="-s -w -X main.version=$VERSION" -o bin/agentsonar-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/agentsonar
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sai-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: bin/sai-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: agentsonar-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/agentsonar-${{ matrix.goos }}-${{ matrix.goarch }}
 
   release:
     needs: build

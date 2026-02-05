@@ -5,7 +5,7 @@ package sai
 import (
 	"fmt"
 
-	"github.com/knostic/sai/types"
+	"github.com/knostic/agentsonar/types"
 )
 
 func NewMonitor(cfg Config) Monitor {

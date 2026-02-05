@@ -17,11 +17,16 @@ type DB struct {
 }
 
 func DefaultDBPath() string {
-	if p := os.Getenv("SAI_DB_PATH"); p != "" {
+	if p := resolveLegacyEnvDB(); p != "" {
 		return p
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "sai", "sai.db")
+	newPath := defaultDBPathNew()
+	if _, err := os.Stat(newPath); os.IsNotExist(err) {
+		if _, err := os.Stat(legacyDBPath()); err == nil {
+			MigrateDB()
+		}
+	}
+	return newPath
 }
 
 func OpenDB(path string) (*DB, error) {

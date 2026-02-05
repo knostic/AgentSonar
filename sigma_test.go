@@ -76,8 +76,8 @@ func TestAgentToSigma(t *testing.T) {
 	if rule.Status != "experimental" {
 		t.Errorf("Status = %q, want %q", rule.Status, "experimental")
 	}
-	if rule.Author != "sai" {
-		t.Errorf("Author = %q, want %q", rule.Author, "sai")
+	if rule.Author != "agentsonar" {
+		t.Errorf("Author = %q, want %q", rule.Author, "agentsonar")
 	}
 	if rule.Date != "2025/01/15" {
 		t.Errorf("Date = %q, want %q", rule.Date, "2025/01/15")
@@ -98,8 +98,8 @@ func TestNoiseToSigmaFilter(t *testing.T) {
 	domains := []string{"google.com", "facebook.com"}
 	rule := NoiseToSigmaFilter(domains)
 
-	if rule.Title != "sai Noise Filter" {
-		t.Errorf("Title = %q, want %q", rule.Title, "sai Noise Filter")
+	if rule.Title != "agentsonar Noise Filter" {
+		t.Errorf("Title = %q, want %q", rule.Title, "agentsonar Noise Filter")
 	}
 	if rule.Detection.Condition != "not filter" {
 		t.Errorf("Condition = %q, want %q", rule.Detection.Condition, "not filter")
@@ -152,7 +152,7 @@ func TestSigmaToAgent(t *testing.T) {
 
 func TestSigmaFilterToNoise(t *testing.T) {
 	rule := SigmaRule{
-		Title: "sai Noise Filter",
+		Title: "agentsonar Noise Filter",
 		Detection: SigmaDetection{
 			Filter: map[string]any{
 				"DestinationHostname|endswith": []any{"google.com", "facebook.com"},
@@ -168,7 +168,7 @@ func TestSigmaFilterToNoise(t *testing.T) {
 	if len(noise) != 2 {
 		t.Errorf("noise = %v, want 2 domains", noise)
 	}
-	if agent.Name != "sai Noise Filter" {
+	if agent.Name != "agentsonar Noise Filter" {
 		t.Errorf("Name = %q", agent.Name)
 	}
 }

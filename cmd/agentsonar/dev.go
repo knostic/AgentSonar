@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/knostic/sai"
+	"github.com/knostic/agentsonar"
 	"github.com/spf13/cobra"
 )
 

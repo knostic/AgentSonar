@@ -73,7 +73,7 @@ func AgentToSigma(agent Agent) SigmaRule {
 		ID:          generateUUID(),
 		Status:      "experimental",
 		Description: fmt.Sprintf("Detects %s AI agent network activity", agent.Name),
-		Author:      "sai",
+		Author:      "agentsonar",
 		Date:        date,
 		LogSource: SigmaLogSource{
 			Category: "network_connection",
@@ -84,7 +84,7 @@ func AgentToSigma(agent Agent) SigmaRule {
 			Condition: "selection",
 		},
 		Level: "informational",
-		Tags:  []string{"attack.exfiltration", "knostic.shadow_ai"},
+		Tags:  []string{"attack.exfiltration", "knostic.agentsonar"},
 	}
 }
 
@@ -103,11 +103,11 @@ func NoiseToSigmaFilter(domains []string) SigmaRule {
 	}
 
 	return SigmaRule{
-		Title:       "sai Noise Filter",
+		Title:       "agentsonar Noise Filter",
 		ID:          generateUUID(),
 		Status:      "experimental",
 		Description: "Domains excluded from AI detection (known non-AI)",
-		Author:      "sai",
+		Author:      "agentsonar",
 		Date:        time.Now().UTC().Format("2006/01/02"),
 		LogSource: SigmaLogSource{
 			Category: "network_connection",

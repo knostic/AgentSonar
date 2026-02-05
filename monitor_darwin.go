@@ -3,8 +3,8 @@
 package sai
 
 import (
-	"github.com/knostic/sai/internal/capture"
-	"github.com/knostic/sai/types"
+	"github.com/knostic/agentsonar/internal/capture"
+	"github.com/knostic/agentsonar/types"
 )
 
 func NewMonitor(cfg Config) Monitor {

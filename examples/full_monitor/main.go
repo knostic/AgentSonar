@@ -9,7 +9,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/knostic/sai"
+	"github.com/knostic/agentsonar"
 )
 
 func main() {

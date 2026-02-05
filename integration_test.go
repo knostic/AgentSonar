@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/knostic/sai/internal/capture"
+	"github.com/knostic/agentsonar/internal/capture"
 	"github.com/stretchr/testify/require"
 )
 

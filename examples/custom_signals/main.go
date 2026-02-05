@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/knostic/sai"
+	"github.com/knostic/agentsonar"
 )
 
 // MapSignals is a simple in-memory Signals implementation.

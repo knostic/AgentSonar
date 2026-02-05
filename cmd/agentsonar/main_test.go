@@ -3,22 +3,23 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/knostic/sai"
+	"github.com/knostic/agentsonar"
 	"github.com/spf13/cobra"
 )
 
 func withTestEnv(t *testing.T, fn func(dir string)) {
 	t.Helper()
 	dir := t.TempDir()
-	t.Setenv("SAI_DB_PATH", filepath.Join(dir, "sai.db"))
-	t.Setenv("SAI_OVERRIDES_PATH", filepath.Join(dir, "overrides.bin"))
-	t.Setenv("SAI_CONFIG_DIR", dir)
+	t.Setenv("AGENTSONAR_DB_PATH", filepath.Join(dir, "agentsonar.db"))
+	t.Setenv("AGENTSONAR_OVERRIDES_PATH", filepath.Join(dir, "overrides.bin"))
+	t.Setenv("AGENTSONAR_CONFIG_DIR", dir)
 	fn(dir)
 }
 
@@ -454,8 +455,8 @@ func TestPathEnvVars(t *testing.T) {
 	customDB := filepath.Join(dir, "custom.db")
 	customFilter := filepath.Join(dir, "custom.bin")
 
-	t.Setenv("SAI_DB_PATH", customDB)
-	t.Setenv("SAI_OVERRIDES_PATH", customFilter)
+	t.Setenv("AGENTSONAR_DB_PATH", customDB)
+	t.Setenv("AGENTSONAR_OVERRIDES_PATH", customFilter)
 
 	if sai.DefaultDBPath() != customDB {
 		t.Errorf("DefaultDBPath() = %q, want %q", sai.DefaultDBPath(), customDB)
@@ -467,22 +468,397 @@ func TestPathEnvVars(t *testing.T) {
 
 func TestPidAndLogPaths(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("SAI_CONFIG_DIR", dir)
+	t.Setenv("AGENTSONAR_CONFIG_DIR", dir)
 
 	pid := pidPath()
 	if !strings.HasPrefix(pid, dir) {
 		t.Errorf("pidPath() = %q, should start with %q", pid, dir)
 	}
-	if !strings.HasSuffix(pid, "sai.pid") {
-		t.Errorf("pidPath() = %q, should end with sai.pid", pid)
+	if !strings.HasSuffix(pid, "agentsonar.pid") {
+		t.Errorf("pidPath() = %q, should end with agentsonar.pid", pid)
 	}
 
 	log := logPath()
 	if !strings.HasPrefix(log, dir) {
 		t.Errorf("logPath() = %q, should start with %q", log, dir)
 	}
-	if !strings.HasSuffix(log, "sai.log") {
-		t.Errorf("logPath() = %q, should end with sai.log", log)
+	if !strings.HasSuffix(log, "agentsonar.log") {
+		t.Errorf("logPath() = %q, should end with agentsonar.log", log)
+	}
+}
+
+func TestLegacyConfigDirEnvVar(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AGENTSONAR_CONFIG_DIR", "")
+	t.Setenv("SAI_CONFIG_DIR", dir)
+
+	pid := pidPath()
+	if !strings.HasPrefix(pid, dir) {
+		t.Errorf("pidPath() = %q, should use legacy SAI_CONFIG_DIR %q", pid, dir)
+	}
+
+	log := logPath()
+	if !strings.HasPrefix(log, dir) {
+		t.Errorf("logPath() = %q, should use legacy SAI_CONFIG_DIR %q", log, dir)
+	}
+}
+
+func TestNewConfigDirTakesPrecedence(t *testing.T) {
+	newDir := t.TempDir()
+	legacyDir := t.TempDir()
+	t.Setenv("AGENTSONAR_CONFIG_DIR", newDir)
+	t.Setenv("SAI_CONFIG_DIR", legacyDir)
+
+	pid := pidPath()
+	if !strings.HasPrefix(pid, newDir) {
+		t.Errorf("pidPath() = %q, should use new AGENTSONAR_CONFIG_DIR %q", pid, newDir)
+	}
+	if strings.HasPrefix(pid, legacyDir) {
+		t.Errorf("pidPath() should not use legacy dir when new dir is set")
+	}
+}
+
+func TestLegacyPidFileMigration(t *testing.T) {
+	dir := t.TempDir()
+	legacyDir := filepath.Join(dir, ".config", "sai")
+	newDir := filepath.Join(dir, ".config", "agentsonar")
+
+	if err := os.MkdirAll(legacyDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(newDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	legacyPid := filepath.Join(legacyDir, "sai.pid")
+	if err := os.WriteFile(legacyPid, []byte("12345"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", dir)
+	t.Setenv("AGENTSONAR_CONFIG_DIR", "")
+	t.Setenv("SAI_CONFIG_DIR", "")
+	t.Setenv("AGENTSONAR_DB_PATH", filepath.Join(newDir, "agentsonar.db"))
+
+	pid := pidPath()
+	expectedPid := filepath.Join(newDir, "agentsonar.pid")
+
+	if pid != expectedPid {
+		t.Errorf("pidPath() = %q, want %q", pid, expectedPid)
+	}
+
+	if _, err := os.Stat(expectedPid); os.IsNotExist(err) {
+		t.Error("legacy pid file should have been migrated")
+	}
+
+	content, _ := os.ReadFile(expectedPid)
+	if string(content) != "12345" {
+		t.Errorf("migrated pid content = %q, want %q", string(content), "12345")
+	}
+}
+
+func TestLegacyLogFileMigration(t *testing.T) {
+	dir := t.TempDir()
+	legacyDir := filepath.Join(dir, ".config", "sai")
+	newDir := filepath.Join(dir, ".config", "agentsonar")
+
+	if err := os.MkdirAll(legacyDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(newDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	legacyLog := filepath.Join(legacyDir, "sai.log")
+	if err := os.WriteFile(legacyLog, []byte("log content"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("HOME", dir)
+	t.Setenv("AGENTSONAR_CONFIG_DIR", "")
+	t.Setenv("SAI_CONFIG_DIR", "")
+	t.Setenv("AGENTSONAR_DB_PATH", filepath.Join(newDir, "agentsonar.db"))
+
+	log := logPath()
+	expectedLog := filepath.Join(newDir, "agentsonar.log")
+
+	if log != expectedLog {
+		t.Errorf("logPath() = %q, want %q", log, expectedLog)
+	}
+
+	if _, err := os.Stat(expectedLog); os.IsNotExist(err) {
+		t.Error("legacy log file should have been migrated")
+	}
+
+	content, _ := os.ReadFile(expectedLog)
+	if string(content) != "log content" {
+		t.Errorf("migrated log content = %q, want %q", string(content), "log content")
+	}
+}
+
+func TestEventTableAlignment(t *testing.T) {
+	// eventFormat = "%s  %s  %-14s  %-28s  %-13s  %-10s  %s"
+	// Columns: SYMBOL(1), AI?(4 pre-padded), AGENT(14), DOMAIN(28), PROCESS(13), SOURCE(10), TIME
+	columns := []string{"AI? ", "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME"}
+	colWidths := map[string]int{"AGENT": 14, "DOMAIN": 28, "PROCESS": 13, "SOURCE": 10, "TIME": 8}
+
+	header := fmt.Sprintf(eventFormat, " ", "AI? ", "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME")
+
+	// Find column start positions from header
+	colPositions := make(map[string]int)
+	for _, col := range columns {
+		colPositions[col] = strings.Index(header, col)
+	}
+
+	genStr := func(n int) string {
+		if n <= 0 {
+			return "x"
+		}
+		b := make([]byte, n)
+		for i := range b {
+			b[i] = 'a' + byte(i%26)
+		}
+		return string(b)
+	}
+
+	// Generate lengths up to each column's max width
+	genLengths := func(max int) []int {
+		lengths := []int{1}
+		for i := 2; i <= max; i += max / 4 {
+			lengths = append(lengths, i)
+		}
+		if lengths[len(lengths)-1] != max {
+			lengths = append(lengths, max)
+		}
+		return lengths
+	}
+
+	var lines []string
+	lines = append(lines, header)
+
+	agentLengths := genLengths(colWidths["AGENT"])
+	domainLengths := genLengths(colWidths["DOMAIN"])
+	procLengths := genLengths(colWidths["PROCESS"])
+
+	for _, agentLen := range agentLengths {
+		for _, domainLen := range domainLengths {
+			for _, procLen := range procLengths {
+				line := fmt.Sprintf(eventFormat, "!", "50% ", genStr(agentLen), genStr(domainLen), genStr(procLen), "tls", "12:00:00")
+				lines = append(lines, line)
+			}
+		}
+	}
+
+	// Verify alignment: each column should start at the same position across all rows
+	// and the character before each column (except first) should be a space
+	for i, line := range lines {
+		for j, col := range columns {
+			pos := colPositions[col]
+			if pos >= len(line) {
+				t.Errorf("row %d: line too short for column %s at position %d: %q", i, col, pos, line)
+				continue
+			}
+			if j > 0 && pos > 0 && line[pos-1] != ' ' {
+				t.Errorf("row %d: expected space before column %s at position %d, got %q: %q", i, col, pos-1, line[pos-1], line)
+			}
+		}
+	}
+}
+
+func TestEventFormatColumnWidths(t *testing.T) {
+	// Verify the format string has reasonable column widths
+	// eventFormat = "%s  %s  %-14s  %-28s  %-13s  %-10s  %s"
+	// Symbol and AI? columns are pre-padded in formatScore
+	expectedWidths := map[string]int{
+		"AGENT":   14,
+		"DOMAIN":  28,
+		"PROCESS": 13,
+		"SOURCE":  10,
+	}
+
+	testData := []struct {
+		field    string
+		maxLen   int
+		examples []string
+	}{
+		{"AGENT", 14, []string{"GitHub Copilot", "Claude Code", "Supermaven", "Amazon Q", "Cursor AI"}},
+		{"PROCESS", 13, []string{"cursor-helper", "sm-agent", "claude", "node", "q-agent-proc"}},
+		{"DOMAIN", 28, []string{"codewhisperer.amazonaws.com", "stream.supermaven.com", "api.anthropic.com"}},
+		{"SOURCE", 10, []string{"streaming", "tls", "dns"}},
+	}
+
+	for _, td := range testData {
+		for _, example := range td.examples {
+			if len(example) > expectedWidths[td.field] {
+				t.Errorf("%s column width %d is too small for %q (len=%d)",
+					td.field, expectedWidths[td.field], example, len(example))
+			}
+		}
+	}
+}
+
+func TestFormatScoreTTY(t *testing.T) {
+	orig := isTTY
+	defer func() { isTTY = orig }()
+
+	isTTY = true
+
+	tests := []struct {
+		name         string
+		score        sai.AIScore
+		isKnownAgent bool
+		wantSymbol   string
+		wantPct      string
+	}{
+		{"known agent", 1.0, true, "*", ""},
+		{"high score", 0.85, false, "!", "85%"},
+		{"medium score", 0.55, false, "?", "55%"},
+		{"low score", 0.15, false, "·", "15%"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			symbol, pct := formatScore(tt.score, tt.isKnownAgent)
+			if !strings.Contains(symbol, tt.wantSymbol) {
+				t.Errorf("expected symbol %q in %q", tt.wantSymbol, symbol)
+			}
+			if tt.wantPct != "" && !strings.Contains(pct, tt.wantPct) {
+				t.Errorf("expected pct %q in %q", tt.wantPct, pct)
+			}
+			if !tt.isKnownAgent {
+				if !strings.Contains(symbol, "\033[") {
+					t.Errorf("TTY mode should have color codes in symbol, got %q", symbol)
+				}
+				if !strings.Contains(pct, "\033[") {
+					t.Errorf("TTY mode should have color codes in pct, got %q", pct)
+				}
+			} else {
+				if strings.TrimSpace(pct) != "" {
+					t.Errorf("known agent pct should be empty/whitespace, got %q", pct)
+				}
+			}
+		})
+	}
+}
+
+func TestFormatScoreNonTTY(t *testing.T) {
+	orig := isTTY
+	defer func() { isTTY = orig }()
+
+	isTTY = false
+
+	tests := []struct {
+		name       string
+		score      sai.AIScore
+		isKnown    bool
+		wantSymbol string
+		wantPct    string
+	}{
+		{"known agent", 1.0, true, "*", "    "},
+		{"high score", 0.85, false, "!", "85% "},
+		{"medium score", 0.55, false, "?", "55% "},
+		{"low score", 0.15, false, "·", "15% "},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			symbol, pct := formatScore(tt.score, tt.isKnown)
+			if strings.Contains(symbol, "\033[") || strings.Contains(pct, "\033[") {
+				t.Errorf("non-TTY mode should not have color codes, got symbol=%q pct=%q", symbol, pct)
+			}
+			if symbol != tt.wantSymbol {
+				t.Errorf("expected symbol %q, got %q", tt.wantSymbol, symbol)
+			}
+			if pct != tt.wantPct {
+				t.Errorf("expected pct %q, got %q", tt.wantPct, pct)
+			}
+		})
+	}
+}
+
+func TestPrintEventTTY(t *testing.T) {
+	orig := isTTY
+	defer func() { isTTY = orig }()
+
+	isTTY = true
+
+	tests := []struct {
+		name         string
+		isKnownAgent bool
+		wantColor    bool
+	}{
+		{"known agent row colored", true, true},
+		{"unknown agent row not colored", false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			old := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			agent := unknownAgent
+			if tt.isKnownAgent {
+				agent = "TestAgent"
+			}
+			printEvent(time.Now(), agent, "proc", 123, "example.com", "tls", 0.5, tt.isKnownAgent, false)
+
+			w.Close()
+			os.Stdout = old
+
+			var buf bytes.Buffer
+			buf.ReadFrom(r)
+			output := buf.String()
+
+			// Check if the line starts with color (row coloring for known agents)
+			startsWithColor := strings.HasPrefix(output, "\033[32m")
+			if tt.wantColor && !startsWithColor {
+				t.Errorf("expected row to start with green color, got %q", output)
+			}
+			if !tt.wantColor && startsWithColor {
+				t.Errorf("expected row without row color, got %q", output)
+			}
+		})
+	}
+}
+
+func TestPrintEventNonTTY(t *testing.T) {
+	orig := isTTY
+	defer func() { isTTY = orig }()
+
+	isTTY = false
+
+	tests := []struct {
+		name         string
+		isKnownAgent bool
+	}{
+		{"known agent no colors", true},
+		{"unknown agent no colors", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			old := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			agent := unknownAgent
+			if tt.isKnownAgent {
+				agent = "TestAgent"
+			}
+			printEvent(time.Now(), agent, "proc", 123, "example.com", "tls", 0.5, tt.isKnownAgent, false)
+
+			w.Close()
+			os.Stdout = old
+
+			var buf bytes.Buffer
+			buf.ReadFrom(r)
+			output := buf.String()
+
+			if strings.Contains(output, "\033[") {
+				t.Errorf("non-TTY should have no color codes, got %q", output)
+			}
+		})
 	}
 }
 

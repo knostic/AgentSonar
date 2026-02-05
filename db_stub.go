@@ -4,8 +4,6 @@ package sai
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -14,11 +12,10 @@ var errNoDBSupport = errors.New("database not supported on this platform")
 type DB struct{}
 
 func DefaultDBPath() string {
-	if p := os.Getenv("SAI_DB_PATH"); p != "" {
+	if p := resolveLegacyEnvDB(); p != "" {
 		return p
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "sai", "sai.db")
+	return defaultDBPathNew()
 }
 
 func OpenDB(path string) (*DB, error) {

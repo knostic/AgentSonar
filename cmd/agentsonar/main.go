@@ -17,17 +17,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/knostic/sai"
+	"github.com/knostic/agentsonar"
 	"github.com/spf13/cobra"
 )
 
 const banner = `
- __  ___ .__   __.   ______        _______.___________. __    ______
-|  |/  / |  \ |  |  /  __  \      /       |           ||  |  /      |
-|  '  /  |   \|  | |  |  |  |    |   (----` + "`" + `---|  |----` + "`" + `|  | |  ,----'
-|    <   |  . ` + "`" + `  | |  |  |  |     \   \       |  |     |  | |  |
-|  .  \  |  |\   | |  ` + "`" + `--'  | .----)   |      |  |     |  | |  ` + "`" + `----.
-|__|\__\ |__| \__|  \______/  |_______/       |__|     |__|  \______|
+██╗  ██╗███╗   ██╗ ██████╗ ███████╗████████╗██╗ ██████╗
+██║ ██╔╝████╗  ██║██╔═══██╗██╔════╝╚══██╔══╝██║██╔════╝
+█████╔╝ ██╔██╗ ██║██║   ██║███████╗   ██║   ██║██║
+██╔═██╗ ██║╚██╗██║██║   ██║╚════██║   ██║   ██║██║
+██║  ██╗██║ ╚████║╚██████╔╝███████║   ██║   ██║╚██████╗
+╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚══════╝   ╚═╝   ╚═╝ ╚═════╝
 
                          knostic.ai
 
@@ -42,9 +42,9 @@ var isTTY = func() bool {
 }()
 
 var rootCmd = &cobra.Command{
-	Use:   "sai",
+	Use:   "agentsonar",
 	Short: "Shadow AI Agent Detection",
-	Long:  "sai - Shadow AI Agent Detection\n\nLive monitoring tool for detecting AI agent network activity.",
+	Long:  "agentsonar - Shadow AI Agent Detection\n\nLive monitoring tool for detecting AI agent network activity.",
 	Run: func(cmd *cobra.Command, args []string) {
 		runMonitor(cmd)
 	},
@@ -55,6 +55,7 @@ var (
 	monitorJSON       bool
 	monitorAll        bool
 	monitorEnablePID0 bool
+	monitorVerbose    bool
 )
 
 func defaultInterface() string {
@@ -70,6 +71,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&monitorIface, "interface", "i", defaultInterface(), "network interface")
 	rootCmd.Flags().BoolVarP(&monitorJSON, "json", "j", false, "JSON lines output")
 	rootCmd.Flags().BoolVarP(&monitorAll, "all", "a", false, "show all events (bypass filters)")
+	rootCmd.Flags().BoolVarP(&monitorVerbose, "verbose", "v", false, "show PID and extra details")
 	rootCmd.Flags().BoolVar(&monitorEnablePID0, "enable-pid0", false, "include PID 0")
 
 	rootCmd.AddGroup(
@@ -153,6 +155,7 @@ func init() {
 	startCmd.Flags().StringP("interface", "i", defaultInterface(), "network interface")
 	startCmd.Flags().BoolP("json", "j", false, "JSON lines output")
 	startCmd.Flags().BoolP("all", "a", false, "show all events (bypass filters)")
+	startCmd.Flags().BoolP("verbose", "v", false, "show PID and extra details")
 	startCmd.Flags().Bool("enable-pid0", false, "include PID 0")
 }
 
@@ -315,7 +318,7 @@ var classifyCmd = &cobra.Command{
 	Long: `Classify events from stdin (JSON lines).
 
 Example:
-  echo '{"proc":"myagent","domain":"ai.example.com","source":"tls","extras":{"bytes_in":"50000","bytes_out":"1000","packets_in":"300","packets_out":"10","duration_ms":"10000","programmatic":"true"}}' | sai classify`,
+  echo '{"proc":"myagent","domain":"ai.example.com","source":"tls","extras":{"bytes_in":"50000","bytes_out":"1000","packets_in":"300","packets_out":"10","duration_ms":"10000","programmatic":"true"}}' | agentsonar classify`,
 	Run: func(cmd *cobra.Command, args []string) {
 		classifiers, _ := cmd.Flags().GetStringSlice("classifier")
 		runClassify(classifiers)
@@ -417,17 +420,26 @@ func runMonitor(cmd *cobra.Command) {
 
 	if err := mon.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		fmt.Fprintln(os.Stderr, "hint: run 'sai install' to configure capture permissions")
+		fmt.Fprintln(os.Stderr, "hint: run 'agentsonar install' to configure capture permissions")
 		os.Exit(1)
 	}
 	defer mon.Stop()
 
 	if !jsonOutput {
 		fmt.Print(banner)
+		fmt.Println("Mark domains: agentsonar agents add <name> <proc> <domain>")
+		fmt.Println("              agentsonar ignore add <domain>")
+		fmt.Println("              agentsonar triage (interactive)")
+		fmt.Println()
+		printLegend()
+		printEventHeader(monitorVerbose)
 	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	seen := make(map[string]time.Time)
+	const dedupWindow = 5 * time.Second
 
 	for {
 		select {
@@ -450,15 +462,22 @@ func runMonitor(cmd *cobra.Command) {
 				continue
 			}
 
+			dedupKey := event.Process + ":" + event.Domain
+			if last, ok := seen[dedupKey]; ok && time.Since(last) < dedupWindow {
+				continue
+			}
+			seen[dedupKey] = time.Now()
+
 			if jsonOutput {
 				data, _ := json.Marshal(event)
 				fmt.Println(string(data))
 			} else {
 				agent := event.Agent
-				if agent == "" {
-					agent = "unknown"
+				isKnownAgent := agent != ""
+				if !isKnownAgent {
+					agent = unknownAgent
 				}
-				printEvent(event.Timestamp, agent, event.Process, event.PID, event.Domain, event.Source, event.AIScore)
+				printEvent(event.Timestamp, agent, event.Process, event.PID, event.Domain, event.Source, event.AIScore, isKnownAgent, monitorVerbose)
 			}
 		}
 	}
@@ -517,18 +536,20 @@ func runEvents(cmd *cobra.Command) {
 			enc.Encode(e)
 		}
 	} else {
+		printEventHeader(false)
 		for _, e := range events {
 			if filterSet.IsNoise(e.Domain) {
 				continue
 			}
 			agent := filterSet.MatchAgent(e.Process, e.Domain)
+			isKnownAgent := agent != ""
 			conf := acc.AIScore(e.Process, e.Domain)
-			if agent != "" {
+			if isKnownAgent {
 				conf = 1.0
 			} else {
-				agent = "unknown"
+				agent = unknownAgent
 			}
-			printEvent(e.Timestamp, agent, e.Process, e.PID, e.Domain, e.Source, conf)
+			printEvent(e.Timestamp, agent, e.Process, e.PID, e.Domain, e.Source, conf, isKnownAgent, false)
 		}
 	}
 }
@@ -920,11 +941,11 @@ func unloadClassifier(name string) {
 }
 
 func runSetup() {
-	fmt.Println("sai setup - BPF permissions for macOS")
+	fmt.Println("agentsonar setup - BPF permissions for macOS")
 	fmt.Println()
-	fmt.Println("To capture network traffic, sai needs BPF access.")
+	fmt.Println("To capture network traffic, agentsonar needs BPF access.")
 	fmt.Println()
-	fmt.Println("Run: sai install")
+	fmt.Println("Run: agentsonar install")
 	fmt.Println()
 	fmt.Println("Or manually:")
 	fmt.Println("  # Create access_bpf group and add yourself")
@@ -941,7 +962,7 @@ func runSetup() {
 func runInstall() {
 	if checkBPF() {
 		fmt.Println("BPF access: ok")
-		fmt.Println("sai is ready to use.")
+		fmt.Println("agentsonar is ready to use.")
 		return
 	}
 
@@ -958,10 +979,15 @@ func runInstall() {
 
 const (
 	bpfGroup      = "access_bpf"
-	bpfPlist      = "/Library/LaunchDaemons/com.knostic.sai.chmodbpf.plist"
-	bpfSupportDir = "/Library/Application Support/Sai"
-	bpfScript     = "/Library/Application Support/Sai/ChmodBPF"
-	linuxGroup    = "sai"
+	bpfPlist      = "/Library/LaunchDaemons/com.knostic.agentsonar.chmodbpf.plist"
+	bpfSupportDir = "/Library/Application Support/AgentSonar"
+	bpfScript     = "/Library/Application Support/AgentSonar/ChmodBPF"
+	linuxGroup    = "agentsonar"
+
+	legacyBpfPlist      = "/Library/LaunchDaemons/com.knostic.sai.chmodbpf.plist"
+	legacyBpfSupportDir = "/Library/Application Support/Sai"
+	legacyBpfScript     = "/Library/Application Support/Sai/ChmodBPF"
+	legacyLinuxGroup    = "sai"
 )
 
 func bpfHasGroupAccess() bool {
@@ -1083,12 +1109,12 @@ func installLaunchDaemon() {
 		return
 	}
 	scriptSrc := filepath.Join(filepath.Dir(exePath), "..", "scripts", "ChmodBPF")
-	plistSrc := filepath.Join(filepath.Dir(exePath), "..", "scripts", "com.knostic.sai.chmodbpf.plist")
+	plistSrc := filepath.Join(filepath.Dir(exePath), "..", "scripts", "com.knostic.agentsonar.chmodbpf.plist")
 
 	// Try current working directory if not found
 	if _, err := os.Stat(scriptSrc); os.IsNotExist(err) {
 		scriptSrc = "scripts/ChmodBPF"
-		plistSrc = "scripts/com.knostic.sai.chmodbpf.plist"
+		plistSrc = "scripts/com.knostic.agentsonar.chmodbpf.plist"
 	}
 
 	if _, err := os.Stat(scriptSrc); os.IsNotExist(err) {
@@ -1145,9 +1171,15 @@ func findFreeGID() int {
 }
 
 func launchDaemonExists() bool {
-	_, err := os.Stat(bpfPlist)
-	return err == nil
+	if _, err := os.Stat(bpfPlist); err == nil {
+		return true
+	}
+	if _, err := os.Stat(legacyBpfPlist); err == nil {
+		return true
+	}
+	return false
 }
+
 
 func addAdminGroupToGroup(group string) error {
 	return sudoRun("dseditgroup", "-o", "edit", "-a", "admin", "-t", "group", group)
@@ -1245,12 +1277,19 @@ func runUninstall() {
 }
 
 func runUninstallDarwin() {
-	if launchDaemonExists() {
+	if _, err := os.Stat(bpfPlist); err == nil {
 		fmt.Println("Removing LaunchDaemon...")
 		_ = exec.Command("sudo", "launchctl", "bootout", "system", bpfPlist).Run()
 		_ = sudoRun("rm", "-f", bpfPlist)
 		_ = sudoRun("rm", "-rf", bpfSupportDir)
 		fmt.Println("LaunchDaemon: removed")
+	}
+	if _, err := os.Stat(legacyBpfPlist); err == nil {
+		fmt.Println("Removing legacy LaunchDaemon...")
+		_ = exec.Command("sudo", "launchctl", "bootout", "system", legacyBpfPlist).Run()
+		_ = sudoRun("rm", "-f", legacyBpfPlist)
+		_ = sudoRun("rm", "-rf", legacyBpfSupportDir)
+		fmt.Println("Legacy LaunchDaemon: removed")
 	}
 
 	if groupExists(bpfGroup) {
@@ -1287,11 +1326,20 @@ func runUninstallLinux() {
 		fmt.Printf("Group %s: not found\n", linuxGroup)
 	}
 
+	if groupExistsLinux(legacyLinuxGroup) {
+		fmt.Printf("Legacy group %s: deleting...\n", legacyLinuxGroup)
+		if err := sudoRun("groupdel", legacyLinuxGroup); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: could not delete legacy group: %v\n", err)
+		} else {
+			fmt.Printf("Legacy group %s: deleted\n", legacyLinuxGroup)
+		}
+	}
+
 	fmt.Println("\nCapabilities removed.")
 }
 
 func runDoctor() {
-	fmt.Println("sai doctor - system diagnostics")
+	fmt.Println("agentsonar doctor - system diagnostics")
 	allOk := true
 
 	fmt.Print("BPF access:      ")
@@ -1299,7 +1347,7 @@ func runDoctor() {
 	if bpfOk {
 		fmt.Println("ok")
 	} else {
-		fmt.Println("FAIL (run 'sai setup')")
+		fmt.Println("FAIL (run 'agentsonar setup')")
 		allOk = false
 	}
 
@@ -1352,29 +1400,53 @@ func runDoctor() {
 	if allOk {
 		fmt.Println("All checks passed. Ready to monitor.")
 	} else {
-		fmt.Println("Some checks failed. Run 'sai setup' for help.")
+		fmt.Println("Some checks failed. Run 'agentsonar setup' for help.")
 		os.Exit(1)
 	}
 }
 
 func pidPath() string {
-	if dir := os.Getenv("SAI_CONFIG_DIR"); dir != "" {
-		return filepath.Join(dir, "sai.pid")
+	if dir := sai.ResolveLegacyEnvConfigDir(); dir != "" {
+		return filepath.Join(dir, "agentsonar.pid")
 	}
-	return filepath.Join(filepath.Dir(sai.DefaultDBPath()), "sai.pid")
+	newPath := filepath.Join(filepath.Dir(sai.DefaultDBPath()), "agentsonar.pid")
+	if _, err := os.Stat(newPath); os.IsNotExist(err) {
+		legacyPath := legacyPidPath()
+		if _, err := os.Stat(legacyPath); err == nil {
+			os.Rename(legacyPath, newPath)
+		}
+	}
+	return newPath
 }
 
 func logPath() string {
-	if dir := os.Getenv("SAI_CONFIG_DIR"); dir != "" {
-		return filepath.Join(dir, "sai.log")
+	if dir := sai.ResolveLegacyEnvConfigDir(); dir != "" {
+		return filepath.Join(dir, "agentsonar.log")
 	}
-	return filepath.Join(filepath.Dir(sai.DefaultDBPath()), "sai.log")
+	newPath := filepath.Join(filepath.Dir(sai.DefaultDBPath()), "agentsonar.log")
+	if _, err := os.Stat(newPath); os.IsNotExist(err) {
+		legacyPath := legacyLogPath()
+		if _, err := os.Stat(legacyPath); err == nil {
+			os.Rename(legacyPath, newPath)
+		}
+	}
+	return newPath
+}
+
+func legacyPidPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "sai", "sai.pid")
+}
+
+func legacyLogPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "sai", "sai.log")
 }
 
 func runStart(cmd *cobra.Command) {
 	if pid := readPID(); pid != 0 {
 		if processExists(pid) {
-			fmt.Fprintf(os.Stderr, "sai is already running (pid %d)\n", pid)
+			fmt.Fprintf(os.Stderr, "agentsonar is already running (pid %d)\n", pid)
 			os.Exit(1)
 		}
 		os.Remove(pidPath())
@@ -1392,6 +1464,9 @@ func runStart(cmd *cobra.Command) {
 	}
 	if jsonOut, _ := cmd.Flags().GetBool("json"); jsonOut {
 		args = append(args, "-j")
+	}
+	if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
+		args = append(args, "-v")
 	}
 	if iface, _ := cmd.Flags().GetString("interface"); iface != defaultInterface() {
 		args = append(args, "-i", iface)
@@ -1418,47 +1493,47 @@ func runStart(cmd *cobra.Command) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("sai started (pid %d)\n", proc.Process.Pid)
+	fmt.Printf("agentsonar started (pid %d)\n", proc.Process.Pid)
 }
 
 func runStop() {
 	pid := readPID()
 	if pid == 0 {
-		fmt.Fprintln(os.Stderr, "sai is not running")
+		fmt.Fprintln(os.Stderr, "agentsonar is not running")
 		os.Exit(1)
 	}
 
 	proc, err := os.FindProcess(pid)
 	if err != nil {
 		os.Remove(pidPath())
-		fmt.Fprintln(os.Stderr, "sai is not running")
+		fmt.Fprintln(os.Stderr, "agentsonar is not running")
 		os.Exit(1)
 	}
 
 	if err := proc.Signal(syscall.SIGTERM); err != nil {
 		os.Remove(pidPath())
-		fmt.Fprintln(os.Stderr, "sai is not running")
+		fmt.Fprintln(os.Stderr, "agentsonar is not running")
 		os.Exit(1)
 	}
 
 	os.Remove(pidPath())
-	fmt.Printf("sai stopped (pid %d)\n", pid)
+	fmt.Printf("agentsonar stopped (pid %d)\n", pid)
 }
 
 func runStatus() {
 	pid := readPID()
 	if pid == 0 {
-		fmt.Println("sai is not running")
+		fmt.Println("agentsonar is not running")
 		os.Exit(1)
 	}
 
 	if !processExists(pid) {
 		os.Remove(pidPath())
-		fmt.Println("sai is not running")
+		fmt.Println("agentsonar is not running")
 		os.Exit(1)
 	}
 
-	fmt.Printf("sai is running (pid %d)\n", pid)
+	fmt.Printf("agentsonar is running (pid %d)\n", pid)
 }
 
 func readPID() int {
@@ -1509,13 +1584,80 @@ func listUsableInterfaces() []string {
 	return result
 }
 
-func printEvent(ts time.Time, agent, process string, pid int, domain, source string, score sai.AIScore) {
-	const format = "%s  %-10s  %-15s  %6d  %-35s  %-10s  %s"
-	if isTTY && agent != "unknown" {
-		fmt.Printf("\033[33m"+format+"\033[0m\n", ts.Format("15:04:05"), agent, process, pid, domain, source, score)
+const (
+	eventFormat        = "%s  %s  %-14s  %-28s  %-13s  %-10s  %s"
+	eventFormatVerbose = "%s  %s  %-14s  %-28s  %-13s  %-10s  %-8s  %6s"
+	unknownAgent       = "-"
+)
+
+func printEventHeader(verbose bool) {
+	if verbose {
+		if isTTY {
+			fmt.Printf("\033[1m"+eventFormatVerbose+"\033[0m\n", " ", "AI? ", "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME", "PID")
+		} else {
+			fmt.Printf(eventFormatVerbose+"\n", " ", "AI? ", "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME", "PID")
+		}
 	} else {
-		fmt.Printf(format+"\n", ts.Format("15:04:05"), agent, process, pid, domain, source, score)
+		if isTTY {
+			fmt.Printf("\033[1m"+eventFormat+"\033[0m\n", " ", "AI? ", "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME")
+		} else {
+			fmt.Printf(eventFormat+"\n", " ", "AI? ", "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME")
+		}
 	}
+}
+
+func printLegend() {
+	fmt.Println("AI? = confidence that domain is an AI service")
+	fmt.Println("  * = confirmed (via triage or imported signatures)")
+	fmt.Println("  ! >= 70%  |  ? >= 40%  |  · < 40%")
+	fmt.Println()
+}
+
+func printEvent(ts time.Time, agent, process string, pid int, domain, source string, score sai.AIScore, isKnownAgent, verbose bool) {
+	symbol, pct := formatScore(score, isKnownAgent)
+	var line string
+	if verbose {
+		pidStr := fmt.Sprintf("%d", pid)
+		line = fmt.Sprintf(eventFormatVerbose, symbol, pct, agent, domain, process, source, ts.Format("15:04:05"), pidStr)
+	} else {
+		line = fmt.Sprintf(eventFormat, symbol, pct, agent, domain, process, source, ts.Format("15:04:05"))
+	}
+	if isTTY && isKnownAgent {
+		fmt.Printf("\033[32m%s\033[0m\n", line)
+	} else {
+		fmt.Println(line)
+	}
+}
+
+func formatScore(score sai.AIScore, isKnownAgent bool) (symbol, pct string) {
+	if isKnownAgent {
+		if isTTY {
+			return "\033[32m*\033[0m", "    "
+		}
+		return "*", "    "
+	}
+	p := int(score * 100)
+	pctStr := fmt.Sprintf("%-4s", fmt.Sprintf("%d%%", p))
+	if !isTTY {
+		switch {
+		case p >= 70:
+			return "!", pctStr
+		case p >= 40:
+			return "?", pctStr
+		default:
+			return "·", pctStr
+		}
+	}
+	var sym, color string
+	switch {
+	case p >= 70:
+		sym, color = "!", "\033[31m"
+	case p >= 40:
+		sym, color = "?", "\033[33m"
+	default:
+		sym, color = "·", "\033[32m"
+	}
+	return fmt.Sprintf("%s%s\033[0m", color, sym), fmt.Sprintf("%s%s\033[0m", color, pctStr)
 }
 
 func baseDomain(domain string) string {

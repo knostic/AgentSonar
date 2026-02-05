@@ -20,7 +20,7 @@ func TestPermissionError(t *testing.T) {
 				Platform: "darwin",
 			},
 			wantMsg:    "user not in access_bpf group",
-			wantHint:   "run 'sai install' to configure BPF permissions",
+			wantHint:   "run 'agentsonar install' to configure BPF permissions",
 			wantReason: "user not in access_bpf group",
 		},
 		{
@@ -31,7 +31,7 @@ func TestPermissionError(t *testing.T) {
 				Err:      errors.New("permission denied"),
 			},
 			wantMsg:    "BPF device not accessible: permission denied",
-			wantHint:   "run 'sai install' to configure BPF permissions",
+			wantHint:   "run 'agentsonar install' to configure BPF permissions",
 			wantReason: "BPF device not accessible",
 		},
 		{
@@ -41,7 +41,7 @@ func TestPermissionError(t *testing.T) {
 				Platform: "linux",
 			},
 			wantMsg:    "missing network capture capabilities",
-			wantHint:   "run 'sai install' to configure capture capabilities",
+			wantHint:   "run 'agentsonar install' to configure capture capabilities",
 			wantReason: "missing network capture capabilities",
 		},
 		{
@@ -51,7 +51,7 @@ func TestPermissionError(t *testing.T) {
 				Platform: "darwin",
 			},
 			wantMsg:    "unknown permission issue",
-			wantHint:   "run 'sai install' to configure permissions",
+			wantHint:   "run 'agentsonar install' to configure permissions",
 			wantReason: "unknown permission issue",
 		},
 	}
