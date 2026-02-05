@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -592,6 +593,264 @@ func TestLegacyLogFileMigration(t *testing.T) {
 	content, _ := os.ReadFile(expectedLog)
 	if string(content) != "log content" {
 		t.Errorf("migrated log content = %q, want %q", string(content), "log content")
+	}
+}
+
+func TestEventTableAlignment(t *testing.T) {
+	columns := []string{"AI", "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME"}
+	// Column widths from eventFormat: "%-7s  %-14s  %-28s  %-13s  %-10s  %s"
+	colWidths := map[string]int{"AI": 7, "AGENT": 14, "DOMAIN": 28, "PROCESS": 13, "SOURCE": 10, "TIME": 8}
+
+	header := fmt.Sprintf(eventFormat, fmt.Sprintf("%-7s", "AI"), "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME")
+
+	// Find column start positions from header
+	colPositions := make(map[string]int)
+	for _, col := range columns {
+		colPositions[col] = strings.Index(header, col)
+	}
+
+	genStr := func(n int) string {
+		if n <= 0 {
+			return "x"
+		}
+		b := make([]byte, n)
+		for i := range b {
+			b[i] = 'a' + byte(i%26)
+		}
+		return string(b)
+	}
+
+	// Generate lengths up to each column's max width
+	genLengths := func(max int) []int {
+		lengths := []int{1}
+		for i := 2; i <= max; i += max / 4 {
+			lengths = append(lengths, i)
+		}
+		if lengths[len(lengths)-1] != max {
+			lengths = append(lengths, max)
+		}
+		return lengths
+	}
+
+	var lines []string
+	lines = append(lines, header)
+
+	aiLengths := genLengths(colWidths["AI"])
+	agentLengths := genLengths(colWidths["AGENT"])
+	domainLengths := genLengths(colWidths["DOMAIN"])
+	procLengths := genLengths(colWidths["PROCESS"])
+
+	for _, aiLen := range aiLengths {
+		for _, agentLen := range agentLengths {
+			for _, domainLen := range domainLengths {
+				for _, procLen := range procLengths {
+					ai := fmt.Sprintf("%-7s", genStr(aiLen))
+					line := fmt.Sprintf(eventFormat, ai, genStr(agentLen), genStr(domainLen), genStr(procLen), "tls", "12:00:00")
+					lines = append(lines, line)
+				}
+			}
+		}
+	}
+
+	// Verify alignment: each column should start at the same position across all rows
+	// and the character before each column (except first) should be a space
+	for i, line := range lines {
+		for j, col := range columns {
+			pos := colPositions[col]
+			if pos >= len(line) {
+				t.Errorf("row %d: line too short for column %s at position %d: %q", i, col, pos, line)
+				continue
+			}
+			if j > 0 && pos > 0 && line[pos-1] != ' ' {
+				t.Errorf("row %d: expected space before column %s at position %d, got %q: %q", i, col, pos-1, line[pos-1], line)
+			}
+		}
+	}
+}
+
+func TestEventFormatColumnWidths(t *testing.T) {
+	// Verify the format string has reasonable column widths
+	// eventFormat = "%-7s  %-14s  %-28s  %-13s  %-10s  %s"
+	expectedWidths := map[string]int{
+		"AI":      7,
+		"AGENT":   14,
+		"DOMAIN":  28,
+		"PROCESS": 13,
+		"SOURCE":  10,
+	}
+
+	testData := []struct {
+		field    string
+		maxLen   int
+		examples []string
+	}{
+		{"AGENT", 14, []string{"GitHub Copilot", "Claude Code", "Supermaven", "Amazon Q", "Cursor AI"}},
+		{"PROCESS", 13, []string{"cursor-helper", "sm-agent", "claude", "node", "q-agent-proc"}},
+		{"DOMAIN", 28, []string{"codewhisperer.amazonaws.com", "stream.supermaven.com", "api.anthropic.com"}},
+		{"SOURCE", 10, []string{"streaming", "tls", "dns"}},
+	}
+
+	for _, td := range testData {
+		for _, example := range td.examples {
+			if len(example) > expectedWidths[td.field] {
+				t.Errorf("%s column width %d is too small for %q (len=%d)",
+					td.field, expectedWidths[td.field], example, len(example))
+			}
+		}
+	}
+}
+
+func TestFormatScoreTTY(t *testing.T) {
+	orig := isTTY
+	defer func() { isTTY = orig }()
+
+	isTTY = true
+
+	tests := []struct {
+		name         string
+		score        sai.AIScore
+		isKnownAgent bool
+		wantColor    bool
+		wantSymbol   string
+	}{
+		{"known agent", 1.0, true, false, "*"},
+		{"high score", 0.85, false, true, "!"},
+		{"medium score", 0.55, false, true, "?"},
+		{"low score", 0.15, false, true, "·"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatScore(tt.score, tt.isKnownAgent)
+			hasColor := strings.Contains(result, "\033[")
+			if tt.isKnownAgent {
+				if hasColor {
+					t.Errorf("known agent should not have color codes in score, got %q", result)
+				}
+			} else if !hasColor {
+				t.Errorf("TTY mode should have color codes, got %q", result)
+			}
+			if !strings.Contains(result, tt.wantSymbol) {
+				t.Errorf("expected symbol %q in %q", tt.wantSymbol, result)
+			}
+		})
+	}
+}
+
+func TestFormatScoreNonTTY(t *testing.T) {
+	orig := isTTY
+	defer func() { isTTY = orig }()
+
+	isTTY = false
+
+	tests := []struct {
+		name         string
+		score        sai.AIScore
+		isKnownAgent bool
+		wantContains string
+	}{
+		{"known agent", 1.0, true, "*"},
+		{"high score", 0.85, false, "0.85"},
+		{"medium score", 0.55, false, "0.55"},
+		{"low score", 0.15, false, "0.15"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := formatScore(tt.score, tt.isKnownAgent)
+			if strings.Contains(result, "\033[") {
+				t.Errorf("non-TTY mode should not have color codes, got %q", result)
+			}
+			if !strings.Contains(result, tt.wantContains) {
+				t.Errorf("expected %q in %q", tt.wantContains, result)
+			}
+		})
+	}
+}
+
+func TestPrintEventTTY(t *testing.T) {
+	orig := isTTY
+	defer func() { isTTY = orig }()
+
+	isTTY = true
+
+	tests := []struct {
+		name         string
+		isKnownAgent bool
+		wantColor    bool
+	}{
+		{"known agent row colored", true, true},
+		{"unknown agent row not colored", false, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			old := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			agent := unknownAgent
+			if tt.isKnownAgent {
+				agent = "TestAgent"
+			}
+			printEvent(time.Now(), agent, "proc", 123, "example.com", "tls", 0.5, tt.isKnownAgent, false)
+
+			w.Close()
+			os.Stdout = old
+
+			var buf bytes.Buffer
+			buf.ReadFrom(r)
+			output := buf.String()
+
+			// Check if the line starts with color (row coloring for known agents)
+			startsWithColor := strings.HasPrefix(output, "\033[32m")
+			if tt.wantColor && !startsWithColor {
+				t.Errorf("expected row to start with green color, got %q", output)
+			}
+			if !tt.wantColor && startsWithColor {
+				t.Errorf("expected row without row color, got %q", output)
+			}
+		})
+	}
+}
+
+func TestPrintEventNonTTY(t *testing.T) {
+	orig := isTTY
+	defer func() { isTTY = orig }()
+
+	isTTY = false
+
+	tests := []struct {
+		name         string
+		isKnownAgent bool
+	}{
+		{"known agent no colors", true},
+		{"unknown agent no colors", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			old := os.Stdout
+			r, w, _ := os.Pipe()
+			os.Stdout = w
+
+			agent := unknownAgent
+			if tt.isKnownAgent {
+				agent = "TestAgent"
+			}
+			printEvent(time.Now(), agent, "proc", 123, "example.com", "tls", 0.5, tt.isKnownAgent, false)
+
+			w.Close()
+			os.Stdout = old
+
+			var buf bytes.Buffer
+			buf.ReadFrom(r)
+			output := buf.String()
+
+			if strings.Contains(output, "\033[") {
+				t.Errorf("non-TTY should have no color codes, got %q", output)
+			}
+		})
 	}
 }
 

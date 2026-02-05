@@ -55,6 +55,7 @@ var (
 	monitorJSON       bool
 	monitorAll        bool
 	monitorEnablePID0 bool
+	monitorVerbose    bool
 )
 
 func defaultInterface() string {
@@ -70,6 +71,7 @@ func init() {
 	rootCmd.Flags().StringVarP(&monitorIface, "interface", "i", defaultInterface(), "network interface")
 	rootCmd.Flags().BoolVarP(&monitorJSON, "json", "j", false, "JSON lines output")
 	rootCmd.Flags().BoolVarP(&monitorAll, "all", "a", false, "show all events (bypass filters)")
+	rootCmd.Flags().BoolVarP(&monitorVerbose, "verbose", "v", false, "show PID and extra details")
 	rootCmd.Flags().BoolVar(&monitorEnablePID0, "enable-pid0", false, "include PID 0")
 
 	rootCmd.AddGroup(
@@ -153,6 +155,7 @@ func init() {
 	startCmd.Flags().StringP("interface", "i", defaultInterface(), "network interface")
 	startCmd.Flags().BoolP("json", "j", false, "JSON lines output")
 	startCmd.Flags().BoolP("all", "a", false, "show all events (bypass filters)")
+	startCmd.Flags().BoolP("verbose", "v", false, "show PID and extra details")
 	startCmd.Flags().Bool("enable-pid0", false, "include PID 0")
 }
 
@@ -428,10 +431,15 @@ func runMonitor(cmd *cobra.Command) {
 		fmt.Println("              agentsonar ignore add <domain>")
 		fmt.Println("              agentsonar triage (interactive)")
 		fmt.Println()
+		printLegend()
+		printEventHeader(monitorVerbose)
 	}
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	seen := make(map[string]time.Time)
+	const dedupWindow = 5 * time.Second
 
 	for {
 		select {
@@ -454,15 +462,22 @@ func runMonitor(cmd *cobra.Command) {
 				continue
 			}
 
+			dedupKey := event.Process + ":" + event.Domain
+			if last, ok := seen[dedupKey]; ok && time.Since(last) < dedupWindow {
+				continue
+			}
+			seen[dedupKey] = time.Now()
+
 			if jsonOutput {
 				data, _ := json.Marshal(event)
 				fmt.Println(string(data))
 			} else {
 				agent := event.Agent
-				if agent == "" {
-					agent = "unknown"
+				isKnownAgent := agent != ""
+				if !isKnownAgent {
+					agent = unknownAgent
 				}
-				printEvent(event.Timestamp, agent, event.Process, event.PID, event.Domain, event.Source, event.AIScore)
+				printEvent(event.Timestamp, agent, event.Process, event.PID, event.Domain, event.Source, event.AIScore, isKnownAgent, monitorVerbose)
 			}
 		}
 	}
@@ -521,18 +536,20 @@ func runEvents(cmd *cobra.Command) {
 			enc.Encode(e)
 		}
 	} else {
+		printEventHeader(false)
 		for _, e := range events {
 			if filterSet.IsNoise(e.Domain) {
 				continue
 			}
 			agent := filterSet.MatchAgent(e.Process, e.Domain)
+			isKnownAgent := agent != ""
 			conf := acc.AIScore(e.Process, e.Domain)
-			if agent != "" {
+			if isKnownAgent {
 				conf = 1.0
 			} else {
-				agent = "unknown"
+				agent = unknownAgent
 			}
-			printEvent(e.Timestamp, agent, e.Process, e.PID, e.Domain, e.Source, conf)
+			printEvent(e.Timestamp, agent, e.Process, e.PID, e.Domain, e.Source, conf, isKnownAgent, false)
 		}
 	}
 }
@@ -1448,6 +1465,9 @@ func runStart(cmd *cobra.Command) {
 	if jsonOut, _ := cmd.Flags().GetBool("json"); jsonOut {
 		args = append(args, "-j")
 	}
+	if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
+		args = append(args, "-v")
+	}
 	if iface, _ := cmd.Flags().GetString("interface"); iface != defaultInterface() {
 		args = append(args, "-i", iface)
 	}
@@ -1564,13 +1584,69 @@ func listUsableInterfaces() []string {
 	return result
 }
 
-func printEvent(ts time.Time, agent, process string, pid int, domain, source string, score sai.AIScore) {
-	const format = "%s  %-10s  %-15s  %6d  %-35s  %-10s  %s"
-	if isTTY && agent != "unknown" {
-		fmt.Printf("\033[33m"+format+"\033[0m\n", ts.Format("15:04:05"), agent, process, pid, domain, source, score)
+const (
+	eventFormat        = "%s  %-14s  %-28s  %-13s  %-10s  %s"
+	eventFormatVerbose = "%s  %-14s  %-28s  %-13s  %-10s  %-8s  %6s"
+	unknownAgent       = "-"
+)
+
+func printEventHeader(verbose bool) {
+	aiHeader := fmt.Sprintf("%-7s", "AI")
+	if verbose {
+		if isTTY {
+			fmt.Printf("\033[1m"+eventFormatVerbose+"\033[0m\n", aiHeader, "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME", "PID")
+		} else {
+			fmt.Printf(eventFormatVerbose+"\n", aiHeader, "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME", "PID")
+		}
 	} else {
-		fmt.Printf(format+"\n", ts.Format("15:04:05"), agent, process, pid, domain, source, score)
+		if isTTY {
+			fmt.Printf("\033[1m"+eventFormat+"\033[0m\n", aiHeader, "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME")
+		} else {
+			fmt.Printf(eventFormat+"\n", aiHeader, "AGENT", "DOMAIN", "PROCESS", "SOURCE", "TIME")
+		}
 	}
+}
+
+func printLegend() {
+	fmt.Println("Legend: * known agent  ! high (>=0.7)  ? medium (>=0.4)  · low (<0.4)")
+	fmt.Println()
+}
+
+func printEvent(ts time.Time, agent, process string, pid int, domain, source string, score sai.AIScore, isKnownAgent, verbose bool) {
+	scoreStr := formatScore(score, isKnownAgent)
+	var line string
+	if verbose {
+		pidStr := fmt.Sprintf("%d", pid)
+		line = fmt.Sprintf(eventFormatVerbose, scoreStr, agent, domain, process, source, ts.Format("15:04:05"), pidStr)
+	} else {
+		line = fmt.Sprintf(eventFormat, scoreStr, agent, domain, process, source, ts.Format("15:04:05"))
+	}
+	if isTTY && isKnownAgent {
+		fmt.Printf("\033[32m%s\033[0m\n", line)
+	} else {
+		fmt.Println(line)
+	}
+}
+
+func formatScore(score sai.AIScore, isKnownAgent bool) string {
+	const width = 7
+	if isKnownAgent {
+		return fmt.Sprintf("%-*s", width, "*")
+	}
+	if !isTTY {
+		return fmt.Sprintf("%-*s", width, fmt.Sprintf("%.2f", score))
+	}
+	var symbol, color string
+	switch {
+	case score >= 0.70:
+		symbol, color = "!", "\033[31m"
+	case score >= 0.40:
+		symbol, color = "?", "\033[33m"
+	default:
+		symbol, color = "·", "\033[32m"
+	}
+	content := fmt.Sprintf("%s %.2f", symbol, score)
+	return fmt.Sprintf("%s%-*s\033[0m", color, width, content)
 }
 
 func baseDomain(domain string) string {
