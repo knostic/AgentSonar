@@ -1,7 +1,9 @@
 .PHONY: build dev clean install test tidy
 
 BINARY=agentsonar
-BUILD_DIR=bin
+# Anchor to Makefile location so "make clean" never deletes a different bin/ (e.g. from CWD)
+ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+BUILD_DIR := $(ROOT)bin
 
 build:
 	@mkdir -p $(BUILD_DIR)
