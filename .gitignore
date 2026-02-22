@@ -1,3 +1,64 @@
+# Build and binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Go
+/vendor/
+go.work
+go.work.sum
+
+# Test and coverage
+coverage.out
+coverage.html
+*.coverprofile
+
+# Logs and temp
 *.tmp
 *.log
-bin/
+*.bak
+*.orig
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+*.icloud
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# IDE and editors
+.idea/
+*.swp
+*.swo
+*.swn
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# Output and build dirs
+dist/
+build/
+out/
