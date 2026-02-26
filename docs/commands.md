@@ -1,11 +1,11 @@
 # Commands
 
-## sai
+## agentsonar
 
 Live monitoring - streams events to stdout.
 
 ```bash
-sai [flags]
+agentsonar [flags]
 ```
 
 | Flag | Description |
@@ -24,12 +24,12 @@ Columns: timestamp, agent, process, pid, domain, source, ai_score
 
 Known agents are highlighted in yellow when output is a TTY. Pipe-friendly (colors disabled when not a TTY).
 
-## sai start
+## agentsonar start
 
 Start the daemon in the background.
 
 ```bash
-sai start [flags]
+agentsonar start [flags]
 ```
 
 | Flag | Description |
@@ -39,30 +39,30 @@ sai start [flags]
 | `-i <iface>` | Network interface (default: en0) |
 | `--enable-pid0` | Include traffic without local process association (containers, mirrored traffic, proxy monitoring) |
 
-Logs: `~/.config/sai/sai.log`, PID: `~/.config/sai/sai.pid`
+Logs: `~/.config/agentsonar/agentsonar.log`, PID: `~/.config/agentsonar/agentsonar.pid`
 
-## sai stop
+## agentsonar stop
 
 Stop the background daemon.
 
 ```bash
-sai stop
+agentsonar stop
 ```
 
-## sai status
+## agentsonar status
 
 Check if the daemon is running.
 
 ```bash
-sai status
+agentsonar status
 ```
 
-## sai events
+## agentsonar events
 
 Query stored events from SQLite.
 
 ```bash
-sai events [flags]
+agentsonar events [flags]
 ```
 
 | Flag | Description |
@@ -73,15 +73,15 @@ sai events [flags]
 | `-n <num>` | Limit results (default: 50) |
 | `-j` | JSON output |
 
-## sai agents
+## agentsonar agents
 
 Manage AI agent definitions.
 
 ```bash
-sai agents                                      # list all agents
-sai agents add <name> <process> <domain>        # create agent
-sai agents add-domain <name> <domain>           # add domain to existing agent
-sai agents rm <name>                            # remove agent
+agentsonar agents                                      # list all agents
+agentsonar agents add <name> <process> <domain>        # create agent
+agentsonar agents add-domain <name> <domain>           # add domain to existing agent
+agentsonar agents rm <name>                            # remove agent
 ```
 
 Patterns support:
@@ -89,26 +89,26 @@ Patterns support:
 - `*.domain.com` - match subdomains
 - `prefix*` - match prefix
 
-Agents are stored in `~/.config/sai/overrides.bin`.
+Agents are stored in `~/.config/agentsonar/overrides.bin`.
 
-## sai ignore
+## agentsonar ignore
 
 Manage noise domains (known non-AI).
 
 ```bash
-sai ignore                  # list noise domains
-sai ignore add <domain>     # add domain to noise list
-sai ignore rm <domain>      # remove domain from noise list
+agentsonar ignore                  # list noise domains
+agentsonar ignore add <domain>     # add domain to noise list
+agentsonar ignore rm <domain>      # remove domain from noise list
 ```
 
 Noise domains and their subdomains are filtered from output (unless `-a` flag is used).
 
-## sai triage
+## agentsonar triage
 
 Interactive triage of unclassified events.
 
 ```bash
-sai triage
+agentsonar triage
 ```
 
 Shows each unique process:domain pair with computed confidence level.
@@ -120,13 +120,13 @@ Actions:
 - `s` - skip
 - `q` - quit and save
 
-## sai export / sai import
+## agentsonar export / agentsonar import
 
 Export/import overrides file.
 
 ```bash
-sai export [--format binary|sigma] <file>
-sai import [--format binary|sigma] <file>
+agentsonar export [--format binary|sigma] <file>
+agentsonar import [--format binary|sigma] <file>
 ```
 
 | Flag | Description |
@@ -139,18 +139,18 @@ Formats:
 
 Sigma format exports agents as detection rules and noise domains as filter rules, compatible with [sigconverter.io](https://sigconverter.io) and sigma-cli.
 
-Overrides file (`~/.config/sai/overrides.bin`) contains:
+Overrides file (`~/.config/agentsonar/overrides.bin`) contains:
 - Named AI agents (process + domain patterns)
 - Noise domains list
 
-## sai classifier
+## agentsonar classifier
 
 Manage external classifiers for scoring unknown traffic.
 
 ```bash
-sai classifier list             # list loaded classifiers
-sai classifier load <config>    # load external classifier
-sai classifier unload <name>    # unload classifier
+agentsonar classifier list             # list loaded classifiers
+agentsonar classifier load <config>    # load external classifier
+agentsonar classifier unload <name>    # unload classifier
 ```
 
 External classifiers are long-running processes that receive JSON on stdin and return AI scores on stdout.
@@ -171,12 +171,12 @@ stdin:  {"domain":"api.example.com","process":"app","source":"tls","stats":{...}
 stdout: {"ai_score":0.85}
 ```
 
-## sai doctor
+## agentsonar doctor
 
 Check system health and configuration.
 
 ```bash
-sai doctor
+agentsonar doctor
 ```
 
 Checks:
@@ -187,12 +187,12 @@ Checks:
 - Configured agents and noise domains
 - Stored event count
 
-## sai install
+## agentsonar install
 
 Setup BPF permissions for packet capture. Exits non-zero if not configured.
 
 ```bash
-sai install
+agentsonar install
 ```
 
 On macOS:
@@ -203,12 +203,12 @@ On macOS:
 
 Log out and back in for group membership to take effect.
 
-## sai uninstall
+## agentsonar uninstall
 
 Remove BPF permissions.
 
 ```bash
-sai uninstall
+agentsonar uninstall
 ```
 
 - Removes LaunchDaemon if installed
@@ -216,22 +216,22 @@ sai uninstall
 
 Log out and back in for changes to take effect.
 
-## sai setup
+## agentsonar setup
 
 Display BPF setup instructions for macOS.
 
 ```bash
-sai setup
+agentsonar setup
 ```
 
-## sai nuke (dev only)
+## agentsonar nuke (dev only)
 
 Clear the database. Only available in dev builds (`make dev`).
 
 ```bash
-sai nuke
+agentsonar nuke
 ```
 
 ## Environment
 
-`SAI_CONFIG_DIR`, `SAI_OVERRIDES_PATH`, `SAI_DB_PATH` override default paths.
+`AGENTSONAR_CONFIG_DIR`, `AGENTSONAR_OVERRIDES_PATH`, `AGENTSONAR_DB_PATH` override default paths.

@@ -1,6 +1,6 @@
 # SIEM Forwarding Example
 
-Forwards sai events to Graylog (or other SIEMs) using GELF format.
+Forwards agentsonar events to Graylog (or other SIEMs) using GELF format.
 
 ## Testing with Graylog
 

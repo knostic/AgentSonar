@@ -23,15 +23,24 @@ dnf install libpcap-devel
 
 ```bash
 git clone https://github.com/knostic/agentsonar
-cd sai
+cd agentsonar
 go mod download
+```
+
+Build the binary, then set up packet capture (see below). To do both in one step:
+
+```bash
+make setup-bpf    # builds and runs agentsonar install
 ```
 
 ### Packet Capture Permissions
 
-**Automated setup:**
+**Automated setup** (after building):
+
 ```bash
-agentsonar install
+make setup-bpf    # build + run agentsonar install
+# or, if already built:
+./bin/agentsonar install
 ```
 
 #### macOS
@@ -64,15 +73,19 @@ Run `agentsonar doctor` to verify permissions.
 ## Build
 
 ```bash
-make build        # production binary -> bin/agentsonar
-make dev          # dev build (includes agentsonar nuke)
-make install      # copy to /usr/local/bin
+make build        # production binary → bin/agentsonar
+make dev          # dev build (-tags dev, e.g. extra logging / nuke) → bin/agentsonar
+make install      # build and copy to /usr/local/bin
+make clean        # remove bin/
+make tidy         # go mod tidy
 ```
+
+Typical workflow: use `make dev` while developing, run `make test` to verify, then `make build` for a release binary.
 
 ## Test
 
 ```bash
-make test
+make test         # go test -v ./...
 ```
 
 ## Project Structure

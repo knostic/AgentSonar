@@ -172,7 +172,7 @@ done
 
 ## Config file
 
-Save as `~/.config/sai/classifiers/my-classifier.json`:
+Save as `~/.config/agentsonar/classifiers/my-classifier.json`:
 
 ```json
 {
@@ -186,7 +186,7 @@ Save as `~/.config/sai/classifiers/my-classifier.json`:
 Load with:
 
 ```bash
-sai classifier load ~/.config/sai/classifiers/my-classifier.json
+agentsonar classifier load ~/.config/agentsonar/classifiers/my-classifier.json
 ```
 
 ## Tips

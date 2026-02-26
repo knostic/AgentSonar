@@ -1,6 +1,16 @@
-# agentsonar
+# AgentSonar
 
 Detect shadow AI agents by monitoring network traffic and classifying process-to-domain pairs.
+
+## What it does and how it works
+
+AgentSonar watches outbound traffic on your machine and answers: **which process is talking to which domain, and is that likely an AI tool?** It associates each connection with a process (via socket ownership), records which domain was contacted (TLS SNI or DNS), and assigns an **AI score** (0–1) to each process–domain pair.
+
+- **Known agents** — You define agents (e.g. “Claude” = process `claude*` → `*.anthropic.com`). Matches get score 1.0 and can be filtered or labeled in the UI.
+- **Unknown traffic** — Everything else is scored by a built-in **heuristic classifier**: it uses traffic shape (byte/packet asymmetry, small packets, long-lived or streaming connections, programmatic TLS) to guess “looks like an LLM API.” No hardcoded list of AI domains; high score means likely shadow AI.
+- **Noise** — Domains you mark as noise (e.g. `google.com`) are ignored and get score 0.
+
+**How to operate it:** Run `agentsonar` (or `agentsonar start`) to monitor live. Events are written to the terminal and stored in a local DB. Use `agentsonar agents` and `agentsonar ignore` to maintain known AI agents and noise. Use `agentsonar triage` to review unknown, high-scoring pairs and mark them as agent or noise. You can also pipe pre-made events into `agentsonar classify` without running capture.
 
 ## Install
 

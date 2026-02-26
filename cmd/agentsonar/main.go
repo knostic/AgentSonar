@@ -1452,7 +1452,12 @@ func runStart(cmd *cobra.Command) {
 		os.Remove(pidPath())
 	}
 
-	logFile, err := os.OpenFile(logPath(), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	logPath := logPath()
+	if err := os.MkdirAll(filepath.Dir(logPath), 0700); err != nil {
+		fmt.Fprintf(os.Stderr, "error: could not create log directory: %v\n", err)
+		os.Exit(1)
+	}
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: could not open log file: %v\n", err)
 		os.Exit(1)
