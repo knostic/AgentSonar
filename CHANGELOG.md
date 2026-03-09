@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.4](https://github.com/knostic/AgentSonar/compare/v1.1.3...v1.1.4) (2026-03-09)
+
+
+### Bug Fixes
+
+* netstat ([50e7597](https://github.com/knostic/AgentSonar/commit/50e75975f322388c1bb499e375b5ffd99afe016b))
+* netstat issue ([50e7597](https://github.com/knostic/AgentSonar/commit/50e75975f322388c1bb499e375b5ffd99afe016b))
+* netstat version ([1eacc8e](https://github.com/knostic/AgentSonar/commit/1eacc8ed8c1ba2abbfc9959b7289ec2cbef3911b))
+
 ## [1.1.2](https://github.com/knostic/shadow_ai/compare/v1.1.1...v1.1.2) (2026-01-29)
 
 
