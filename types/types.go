@@ -15,6 +15,7 @@ func (s AIScore) String() string {
 type Config struct {
 	Interface  string // network interface (default: en0)
 	EnablePID0 bool   // include PID 0 / system processes
+	Verbose    bool
 }
 
 // Event represents a process calling a domain

@@ -11,6 +11,8 @@ import "C"
 
 import (
 	"bufio"
+	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -145,31 +147,55 @@ func (s *sniMonitor) updateStatsFromNetstat() {
 	}
 
 	scanner := bufio.NewScanner(stdout)
+	scanner.Scan()
+	if !scanner.Scan() {
+		cmd.Wait()
+		return
+	}
+	headerFields := strings.Fields(scanner.Text())
+	statCols := parseNetstatStatColumns(headerFields)
+	cols, ok := parseNetstatHeader(scanner.Text())
+	if !ok {
+		cmd.Wait()
+		return
+	}
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if !strings.Contains(line, ".443") {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) < 12 {
+		minFields := max(cols.foreignAddr+1, statCols.minFields)
+		if len(fields) < minFields {
 			continue
 		}
 
-		local := fields[3]
-		foreign := fields[4]
+		foreign := fields[cols.foreignAddr]
 		if !strings.HasSuffix(foreign, ".443") {
 			continue
 		}
 
-		rxBytes, _ := strconv.ParseInt(fields[6], 10, 64)
-		txBytes, _ := strconv.ParseInt(fields[7], 10, 64)
-		rxPkts, _ := strconv.Atoi(fields[8])
-		txPkts, _ := strconv.Atoi(fields[9])
-
+		local := fields[cols.localAddr]
 		localIP, localPort := parseNetstatAddr(local)
 		foreignIP, foreignPort := parseNetstatAddr(foreign)
 		if localPort == 0 || foreignPort == 0 {
 			continue
+		}
+
+		var rxBytes, txBytes int64
+		var rxPkts, txPkts int
+		if statCols.rxBytes >= 0 && statCols.rxBytes < len(fields) {
+			rxBytes, _ = strconv.ParseInt(fields[statCols.rxBytes], 10, 64)
+		}
+		if statCols.txBytes >= 0 && statCols.txBytes < len(fields) {
+			txBytes, _ = strconv.ParseInt(fields[statCols.txBytes], 10, 64)
+		}
+		if statCols.rxPkts >= 0 && statCols.rxPkts < len(fields) {
+			rxPkts, _ = strconv.Atoi(fields[statCols.rxPkts])
+		}
+		if statCols.txPkts >= 0 && statCols.txPkts < len(fields) {
+			txPkts, _ = strconv.Atoi(fields[statCols.txPkts])
 		}
 
 		key := types.ConnectionKey{
@@ -181,6 +207,44 @@ func (s *sniMonitor) updateStatsFromNetstat() {
 		s.traffic.UpdateFromNetstat(key, rxBytes, txBytes, rxPkts, txPkts)
 	}
 	cmd.Wait()
+}
+
+type netstatStatColumns struct {
+	rxBytes   int
+	txBytes   int
+	rxPkts    int
+	txPkts    int
+	minFields int
+}
+
+func parseNetstatStatColumns(fields []string) netstatStatColumns {
+	cols := netstatStatColumns{rxBytes: -1, txBytes: -1, rxPkts: -1, txPkts: -1}
+
+	multiWordAdjustment := 0
+	for i, f := range fields {
+		fl := strings.ToLower(f)
+		if fl == "address" {
+			multiWordAdjustment++
+			continue
+		}
+		dataIdx := i - multiWordAdjustment
+		switch fl {
+		case "rxbytes":
+			cols.rxBytes = dataIdx
+		case "txbytes":
+			cols.txBytes = dataIdx
+		case "rxpackets":
+			cols.rxPkts = dataIdx
+		case "txpackets":
+			cols.txPkts = dataIdx
+		}
+	}
+	for _, idx := range []int{cols.rxBytes, cols.txBytes, cols.rxPkts, cols.txPkts} {
+		if idx+1 > cols.minFields {
+			cols.minFields = idx + 1
+		}
+	}
+	return cols
 }
 
 func parseNetstatAddr(addr string) (string, uint16) {
@@ -255,6 +319,9 @@ func (s *sniMonitor) emitTLSEvent(ch *ClientHello, srcPort uint16, connKey types
 	pid := s.lookupPID(srcPort)
 	procPath := getProcessPath(pid)
 	if !s.cfg.EnablePID0 && (pid == 0 || procPath == "") {
+		if s.cfg.Verbose {
+			fmt.Fprintf(os.Stderr, "[verbose] dropping TLS event for %s: pid=%d procPath=%q (srcPort=%d)\n", sni, pid, procPath, srcPort)
+		}
 		return
 	}
 
@@ -304,6 +371,9 @@ func (s *sniMonitor) emitDNSEvent(domain string, srcPort uint16) {
 	pid := s.lookupPID(srcPort)
 	procPath := getProcessPath(pid)
 	if !s.cfg.EnablePID0 && (pid == 0 || procPath == "") {
+		if s.cfg.Verbose {
+			fmt.Fprintf(os.Stderr, "[verbose] dropping DNS event for %s: pid=%d procPath=%q (srcPort=%d)\n", domain, pid, procPath, srcPort)
+		}
 		return
 	}
 
@@ -405,6 +475,9 @@ func (s *sniMonitor) getStreamingConnections() map[string]*types.TrafficFeatures
 func (s *sniMonitor) emitStreamingEvent(sni string, features *types.TrafficFeatures) {
 	procPath := getProcessPath(uint32(features.PID))
 	if !s.cfg.EnablePID0 && (features.PID == 0 || procPath == "") {
+		if s.cfg.Verbose {
+			fmt.Fprintf(os.Stderr, "[verbose] dropping streaming event for %s: pid=%d procPath=%q\n", sni, features.PID, procPath)
+		}
 		return
 	}
 
@@ -465,6 +538,108 @@ func extractProcessName(path string) string {
 	return path
 }
 
+type netstatColumns struct {
+	localAddr   int
+	foreignAddr int
+	pid         int
+}
+
+func parseNetstatHeader(header string) (netstatColumns, bool) {
+	cols := netstatColumns{localAddr: -1, foreignAddr: -1, pid: -1}
+	lower := strings.ToLower(header)
+	headerFields := strings.Fields(lower)
+	headerWordCount := len(headerFields)
+	if headerWordCount == 0 {
+		return cols, false
+	}
+
+	type target struct {
+		keyword string
+		dest    *int
+	}
+	targets := []target{
+		{"local", &cols.localAddr},
+		{"foreign", &cols.foreignAddr},
+		{"pid", &cols.pid},
+	}
+	for _, t := range targets {
+		for i, f := range headerFields {
+			if f == t.keyword || strings.HasSuffix(f, ":"+t.keyword) {
+				*t.dest = i
+				break
+			}
+		}
+		if *t.dest < 0 {
+			return cols, false
+		}
+	}
+
+	// NOTE: header has multi-word columns (e.g. "Local Address", "Foreign Address")
+	// which means header word count > data field count.
+	// We compute each target's distance from the end of the header,
+	// then map it to the same distance from the end in data lines.
+	// We calibrate using a known data field count offset:
+	// multiWordCols = number of multi-word headers = headerWordCount - dataFieldCount
+	// For each target at header index h, data index = h - (multi-word columns before h)
+	// We detect multi-word columns by looking for words that are not plausible column names
+	// following another word (like "Address" after "Local").
+	// Simpler: count known multi-word pairs before each target.
+	multiWordPairs := []string{"address"}
+	for _, t := range targets {
+		adjustment := 0
+		for i := 0; i < *t.dest; i++ {
+			for _, mw := range multiWordPairs {
+				if headerFields[i] == mw {
+					adjustment++
+				}
+			}
+		}
+		*t.dest -= adjustment
+	}
+
+	return cols, true
+}
+
+func parseNetstatLine(line string, cols netstatColumns) (port uint16, pid uint32, ok bool) {
+	if !strings.Contains(line, ".443") {
+		return 0, 0, false
+	}
+	fields := strings.Fields(line)
+	minFields := cols.pid + 1
+	if cols.foreignAddr+1 > minFields {
+		minFields = cols.foreignAddr + 1
+	}
+	if len(fields) < minFields {
+		return 0, 0, false
+	}
+
+	foreign := fields[cols.foreignAddr]
+	if !strings.HasSuffix(foreign, ".443") {
+		return 0, 0, false
+	}
+
+	local := fields[cols.localAddr]
+	lastDot := strings.LastIndex(local, ".")
+	if lastDot < 0 {
+		return 0, 0, false
+	}
+	p, err := strconv.Atoi(local[lastDot+1:])
+	if err != nil || p <= 0 {
+		return 0, 0, false
+	}
+
+	pidStr := fields[cols.pid]
+	if colonIdx := strings.LastIndex(pidStr, ":"); colonIdx >= 0 {
+		pidStr = pidStr[colonIdx+1:]
+	}
+	pidVal, err := strconv.Atoi(pidStr)
+	if err != nil || pidVal <= 0 {
+		return 0, 0, false
+	}
+
+	return uint16(p), uint32(pidVal), true
+}
+
 func (s *sniMonitor) refreshPortCache() {
 	cache := make(map[uint16]uint32)
 
@@ -478,33 +653,27 @@ func (s *sniMonitor) refreshPortCache() {
 	}
 
 	scanner := bufio.NewScanner(stdout)
+	// NOTE: skip first line ("Active Internet connections ...")
+	scanner.Scan()
+	// NOTE: parse header to find column indices
+	if !scanner.Scan() {
+		cmd.Wait()
+		return
+	}
+	cols, ok := parseNetstatHeader(scanner.Text())
+	if !ok {
+		if s.cfg.Verbose {
+			fmt.Fprintf(os.Stderr, "[verbose] netstat: could not parse header, PID resolution disabled\n")
+		}
+		cmd.Wait()
+		return
+	}
+
 	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.Contains(line, ".443") {
-			continue
+		port, pid, ok := parseNetstatLine(scanner.Text(), cols)
+		if ok {
+			cache[port] = pid
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 11 {
-			continue
-		}
-		local := fields[3]
-		foreign := fields[4]
-		if !strings.HasSuffix(foreign, ".443") {
-			continue
-		}
-		lastDot := strings.LastIndex(local, ".")
-		if lastDot < 0 {
-			continue
-		}
-		port, err := strconv.Atoi(local[lastDot+1:])
-		if err != nil || port <= 0 {
-			continue
-		}
-		pid, err := strconv.Atoi(fields[10])
-		if err != nil || pid <= 0 {
-			continue
-		}
-		cache[uint16(port)] = uint32(pid)
 	}
 	cmd.Wait()
 
