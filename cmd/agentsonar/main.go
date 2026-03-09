@@ -416,6 +416,7 @@ func runMonitor(cmd *cobra.Command) {
 	mon := sai.NewMonitor(sai.Config{
 		Interface:  iface,
 		EnablePID0: enablePID0,
+		Verbose:    monitorVerbose,
 	})
 
 	if err := mon.Start(); err != nil {
