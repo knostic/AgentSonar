@@ -574,16 +574,7 @@ func parseNetstatHeader(header string) (netstatColumns, bool) {
 		}
 	}
 
-	// NOTE: header has multi-word columns (e.g. "Local Address", "Foreign Address")
-	// which means header word count > data field count.
-	// We compute each target's distance from the end of the header,
-	// then map it to the same distance from the end in data lines.
-	// We calibrate using a known data field count offset:
-	// multiWordCols = number of multi-word headers = headerWordCount - dataFieldCount
-	// For each target at header index h, data index = h - (multi-word columns before h)
-	// We detect multi-word columns by looking for words that are not plausible column names
-	// following another word (like "Address" after "Local").
-	// Simpler: count known multi-word pairs before each target.
+	// NOTE: multi-word headers like "Local Address" shift word indices vs data field indices
 	multiWordPairs := []string{"address"}
 	for _, t := range targets {
 		adjustment := 0
