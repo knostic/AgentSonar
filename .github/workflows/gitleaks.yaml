@@ -3,16 +3,15 @@ on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: read
+  pull-requests: read
 jobs:
   scan:
     uses: knostic/.github/.github/workflows/gitleaks.yaml@fix/gitleaks-scan-range
-    permissions:
-      contents: read
-      pull-requests: read
     with:
       event_name: ${{ github.event_name }}
-      base_sha: ${{ github.event.pull_request.base.sha || "" }}
-      before_sha: ${{ github.event.before || "" }}
+      base_sha: ${{ github.event.pull_request.base.sha || '' }}
+      before_sha: ${{ github.event.before || '' }}
       forced: ${{ github.event.forced == true }}
     secrets: inherit
-
