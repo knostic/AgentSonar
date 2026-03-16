@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.5](https://github.com/knostic/AgentSonar/compare/v1.1.4...v1.1.5) (2026-03-13)
+
+
+### Bug Fixes
+
+* **ci:** [OPS-715] add gitleaks secret scanning ([#11](https://github.com/knostic/AgentSonar/issues/11)) ([cefe296](https://github.com/knostic/AgentSonar/commit/cefe296810fdc2338da6aab5640cd9879992487d))
+
 ## [1.1.4](https://github.com/knostic/AgentSonar/compare/v1.1.3...v1.1.4) (2026-03-09)
 
 
