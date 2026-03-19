@@ -1,10 +1,24 @@
+```
+██╗  ██╗███╗   ██╗ ██████╗ ███████╗████████╗██╗ ██████╗
+██║ ██╔╝████╗  ██║██╔═══██╗██╔════╝╚══██╔══╝██║██╔════╝
+█████╔╝ ██╔██╗ ██║██║   ██║███████╗   ██║   ██║██║     
+██╔═██╗ ██║╚██╗██║██║   ██║╚════██║   ██║   ██║██║     
+██║  ██╗██║ ╚████║╚██████╔╝███████║   ██║   ██║╚██████╗
+╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚══════╝   ╚═╝   ╚═╝ ╚═════╝
+```
+
 # AgentSonar
+Detect shadow AI agents by monitoring network traffic for patterns that resemble LLM communication, and by classifying process-to-domain pairs for future detection. Contribute to the community by submitting your agent classifications.
 
-Detect shadow AI agents by monitoring network traffic and classifying process-to-domain pairs.
+**By [Knostic](https://knostic.ai/)**
 
-## What it does and how it works
+Also check out:
+- **OpenAnt:** https://github.com/knostic/OpenAnt/. [OpenAnt](https://knostic.ai/openant) is an open source LLM-based vulnerability discovery product that helps defenders proactively find verified security flaws while minimizing both false positives and false negatives. Stage 1 detects. Stage 2 attacks. What survives is real.
+- **Like what we do?** Knostic helps you with visibility and control of your agents, coding assistants, and MCP/extensions/skills, from Cursor and Claude Code, to Copilot and Cowork.
 
-AgentSonar watches outbound traffic on your machine and answers: **which process is talking to which domain, and is that likely an AI tool?** It associates each connection with a process (via socket ownership), records which domain was contacted (TLS SNI or DNS), and assigns an **AI score** (0–1) to each process–domain pair.
+## What AgentSonar does and how it works
+
+AgentSonar watches outbound traffic on your machine and answers: **which process is talking to which domain, and is that likely an AI tool?** It associates each connection with a process (via socket ownership), records which domain was contacted (TLS SNI or DNS), and assigns an **AI score** (0–1) to each process–domain pair based on traffic analysis.
 
 - **Known agents** — You define agents (e.g. “Claude” = process `claude*` → `*.anthropic.com`). Matches get score 1.0 and can be filtered or labeled in the UI.
 - **Unknown traffic** — Everything else is scored by a built-in **heuristic classifier**: it uses traffic shape (byte/packet asymmetry, small packets, long-lived or streaming connections, programmatic TLS) to guess “looks like an LLM API.” No hardcoded list of AI domains; high score means likely shadow AI.
