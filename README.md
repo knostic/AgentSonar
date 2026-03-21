@@ -14,7 +14,7 @@ Detect shadow AI agents by monitoring network traffic for patterns that resemble
 
 Also check out:
 - **OpenAnt:** https://github.com/knostic/OpenAnt/. [OpenAnt](https://knostic.ai/openant) is an open source LLM-based vulnerability discovery product that helps defenders proactively find verified security flaws while minimizing both false positives and false negatives. Stage 1 detects. Stage 2 attacks. What survives is real.
-- If you want to manage this at enterprise scale, check out how [Knostic](https://knostic.ai/) helps you discover and secure your agents, coding assistants, MCP servers/extensions/skills, etc. Drop me a line for a demo, or visit our website on: https://knostic.ai/Knostic helps you with visibility and control of your agents, coding assistants, and MCP/extensions/skills, from Cursor and Claude Code, to Copilot and Cowork.
+- If you want to manage this at enterprise scale, check out how [Knostic](https://knostic.ai/) helps you discover and secure your agents, coding assistants, MCP servers/extensions/skills, etc.
 
 ## What AgentSonar does and how it works
 
