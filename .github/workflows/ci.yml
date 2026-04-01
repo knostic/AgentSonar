@@ -10,7 +10,11 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            install: sudo apt-get update && sudo apt-get install -y libpcap-dev
+          - os: macos-latest
+            install: brew install libpcap
 
     runs-on: ${{ matrix.os }}
     steps:
