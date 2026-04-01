@@ -19,12 +19,13 @@ jobs:
           persist-credentials: false
       - name: Set scan range
         id: range
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          FORCED: ${{ github.event.forced }}
         run: |
           NULL_SHA="0000000000000000000000000000000000000000"
-          EVENT="${{ github.event_name }}"
-          BASE_SHA="${{ github.event.pull_request.base.sha }}"
-          BEFORE_SHA="${{ github.event.before }}"
-          FORCED="${{ github.event.forced }}"
           if [ "$EVENT" = "pull_request" ] && [ -n "$BASE_SHA" ]; then
             echo "log_opts=${BASE_SHA}..HEAD" >> $GITHUB_OUTPUT
           elif [ "$EVENT" = "push" ] && [ "$FORCED" \!= "true" ] && [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" \!= "$NULL_SHA" ]; then
