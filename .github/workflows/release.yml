@@ -54,7 +54,7 @@ jobs:
           VERSION: ${{ github.event.release.tag_name || github.ref_name }}
         run: |
           mkdir -p bin
-          go build -ldflags="-s -w -X main.version=$VERSION" -o bin/agentsonar-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/agentsonar
+          go build -ldflags="-s -w -X main.version=$VERSION" -o "bin/agentsonar-${GOOS}-${GOARCH}" ./cmd/agentsonar
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
