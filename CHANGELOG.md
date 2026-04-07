@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.6](https://github.com/knostic/AgentSonar/compare/v1.1.5...v1.1.6) (2026-04-07)
+
+
+### Bug Fixes
+
+* **ci:** [OPS-723] prevent script injection in workflow run: blocks ([#17](https://github.com/knostic/AgentSonar/issues/17)) ([2ad30ce](https://github.com/knostic/AgentSonar/commit/2ad30ceaff81f959fbbdfcf8bc8db35a0770f8c8))
+
 ## [1.1.5](https://github.com/knostic/AgentSonar/compare/v1.1.4...v1.1.5) (2026-03-13)
 
 
